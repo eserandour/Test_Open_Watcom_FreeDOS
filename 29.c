@@ -3,7 +3,7 @@
    Open Watcom 1.9 sous FreeDOS 1.4
    
    PROJET DOS 16 bits (mode 13h)
-   Version : 22/04/2026 à 13:25
+   Version : 22/04/2026 à 13:36
    ========================================================= */
 
 /* =========================================================
@@ -160,7 +160,6 @@ int initBackbuffer(void)
     _fmemset(backbuffer, 0, BACKBUFFER_SIZE);  // Nettoyage de l'écran (en noir)
     return 1; // Succès
 }
-
 
 /* Libère le backbuffer */
 void freeBackbuffer(void)
@@ -407,13 +406,13 @@ void clearScreen(unsigned char color)
 void putPixel(int x, int y, unsigned char color)
 {
     // if (x >= 0 && x < SCREEN_WIDTH && y >= 0 && y < SCREEN_HEIGHT)  // Clipping => Pour plus de sécurité, mais c'est plus lent
-        backbuffer[OFFSET(x,y)] = color;
+        backbuffer[OFFSET(x,y)] = color;  // y * 320 + x
 }
 
 /* Lit un Pixel */
 unsigned char getPixel(int x, int y)
 {
-    return backbuffer[OFFSET(x,y)];
+    return backbuffer[OFFSET(x,y)];  // y * 320 + x
 }
 
 /* Dessine une Ligne (algorithme de tracé de segment de Bresenham) */
@@ -451,7 +450,7 @@ void drawRectFill(int x1, int y1, int x2, int y2, unsigned char color)
     int offset;
 
     for (y = y1; y <= y2; y++) {
-        offset = (y << 8) + (y << 6) + x1;  // y * 320 + x1
+        offset = OFFSET(x1,y);  // y * 320 + x1
         _fmemset(backbuffer + offset, color, x2 - x1 + 1);
     }
 }
@@ -698,7 +697,7 @@ void sceneEnd(void)
     static unsigned long lastRender = 0;
     unsigned long now = readTimer();
     unsigned long render_interval_ms = 100UL;  // Durée entre 2 frames
-    unsigned long scene_ms = 3000UL; // Durée de la scène
+    unsigned long scene_ms = 5000UL; // Durée de la scène
       
     while (elapsedTimeMs(lastRender, now) >= render_interval_ms)
     {
@@ -710,6 +709,10 @@ void sceneEnd(void)
         // Dessin backbuffer ///////////////////////////////////////////
         
         clearScreen(127);
+        drawRectFill(10, 10, 50, 30, 0);
+        drawRect(269, 10, 309, 30, 1);
+        drawCircle(160, 100, 60, 255);
+        drawLine(0, 0, 319, 199, 0);
         flip();
             
         ////////////////////////////////////////////////////////////////
