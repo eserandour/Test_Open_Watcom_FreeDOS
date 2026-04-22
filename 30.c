@@ -3,7 +3,7 @@
    Open Watcom 1.9 sous FreeDOS 1.4
    
    PROJET DOS 16 bits (mode 13h)
-   Version : 22/04/2026 à 23:18
+   Version : 23/04/2026 à 01:06
    ========================================================= */
 
 /* =========================================================
@@ -436,7 +436,8 @@ void drawLine(int x1, int y1, int x2, int y2, unsigned char color)
 }
 
 /* Dessine un Rectangle */
-void drawRect(int x1, int y1, int x2, int y2, unsigned char color) {
+void drawRect(int x1, int y1, int x2, int y2, unsigned char color)
+{
     drawLine(x1, y1, x2, y1, color);
     drawLine(x2, y1, x2, y2, color);
     drawLine(x2, y2, x1, y2, color);
@@ -455,12 +456,56 @@ void drawRectFill(int x1, int y1, int x2, int y2, unsigned char color)
     }
 }
 /* Dessine un Cercle (algorithme de tracé d'arc de cercle de Bresenham) */
-void drawCircle(int xc, int yc, int r, unsigned char color)
+void drawCircle(int xc, int yc, int r, unsigned char color)  // Avec clipping
 {
-    int x = 0, y = r;
+    int x = 0;
+    int y = r;
     int d = 3 - 2 * r;
 
-    while (x <= y) {
+    while (x <= y)
+    {
+        // Pour chaque pixel symétrique, vérifier le clipping
+        if (xc + x >= 0 && xc + x < SCREEN_WIDTH) {
+            if (yc + y >= 0 && yc + y < SCREEN_HEIGHT) putPixel(xc + x, yc + y, color);
+            if (yc - y >= 0 && yc - y < SCREEN_HEIGHT) putPixel(xc + x, yc - y, color);
+        }
+
+        if (xc - x >= 0 && xc - x < SCREEN_WIDTH) {
+            if (yc + y >= 0 && yc + y < SCREEN_HEIGHT) putPixel(xc - x, yc + y, color);
+            if (yc - y >= 0 && yc - y < SCREEN_HEIGHT) putPixel(xc - x, yc - y, color);
+        }
+
+        if (xc + y >= 0 && xc + y < SCREEN_WIDTH) {
+            if (yc + x >= 0 && yc + x < SCREEN_HEIGHT) putPixel(xc + y, yc + x, color);
+            if (yc - x >= 0 && yc - x < SCREEN_HEIGHT) putPixel(xc + y, yc - x, color);
+        }
+
+        if (xc - y >= 0 && xc - y < SCREEN_WIDTH) {
+            if (yc + x >= 0 && yc + x < SCREEN_HEIGHT) putPixel(xc - y, yc + x, color);
+            if (yc - x >= 0 && yc - x < SCREEN_HEIGHT) putPixel(xc - y, yc - x, color);
+        }
+
+        if (d < 0)
+        {
+            d += 4 * x + 6;
+        }
+        else
+        {
+            d += 4 * (x - y) + 10;
+            y--;
+        }
+        x++;
+    }
+}
+/*
+void drawCircle(int xc, int yc, int r, unsigned char color)  // Sans clipping
+{
+    int x = 0;
+    int y = r;
+    int d = 3 - 2 * r;
+
+    while (x <= y)
+    {
         putPixel(xc + x, yc + y, color);
         putPixel(xc - x, yc + y, color);
         putPixel(xc + x, yc - y, color);
@@ -478,7 +523,98 @@ void drawCircle(int xc, int yc, int r, unsigned char color)
         x++;
     }
 }
+*/
+/* Dessine un Cercle plein */
+void drawCircleFill(int xc, int yc, int r, unsigned char color)  // Avec clipping
+{
+    int x = 0;
+    int y = r;
+    int d = 3 - 2 * r;
 
+    while (x <= y)
+    {
+        int x_start, x_len;
+
+        // Ligne horizontale yc - y
+        if (yc - y >= 0 && yc - y < SCREEN_HEIGHT) {
+            x_start = xc - x;
+            x_len = 2 * x + 1;
+            if (x_start < 0) { x_len += x_start; x_start = 0; }
+            if (x_start + x_len > SCREEN_WIDTH) x_len = SCREEN_WIDTH - x_start;
+            if (x_len > 0)
+                _fmemset(backbuffer + OFFSET(x_start, yc - y), color, x_len);
+        }
+
+        // Ligne horizontale yc + y
+        if (yc + y >= 0 && yc + y < SCREEN_HEIGHT) {
+            x_start = xc - x;
+            x_len = 2 * x + 1;
+            if (x_start < 0) { x_len += x_start; x_start = 0; }
+            if (x_start + x_len > SCREEN_WIDTH) x_len = SCREEN_WIDTH - x_start;
+            if (x_len > 0)
+                _fmemset(backbuffer + OFFSET(x_start, yc + y), color, x_len);
+        }
+
+        // Ligne horizontale yc - x
+        if (yc - x >= 0 && yc - x < SCREEN_HEIGHT) {
+            x_start = xc - y;
+            x_len = 2 * y + 1;
+            if (x_start < 0) { x_len += x_start; x_start = 0; }
+            if (x_start + x_len > SCREEN_WIDTH) x_len = SCREEN_WIDTH - x_start;
+            if (x_len > 0)
+                _fmemset(backbuffer + OFFSET(x_start, yc - x), color, x_len);
+        }
+
+        // Ligne horizontale yc + x
+        if (yc + x >= 0 && yc + x < SCREEN_HEIGHT) {
+            x_start = xc - y;
+            x_len = 2 * y + 1;
+            if (x_start < 0) { x_len += x_start; x_start = 0; }
+            if (x_start + x_len > SCREEN_WIDTH) x_len = SCREEN_WIDTH - x_start;
+            if (x_len > 0)
+                _fmemset(backbuffer + OFFSET(x_start, yc + x), color, x_len);
+        }
+
+        if (d < 0)
+        {
+            d += 4 * x + 6;
+        }
+        else
+        {
+            d += 4 * (x - y) + 10;
+            y--;
+        }
+        x++;
+    }
+}
+/*
+void drawCircleFill(int xc, int yc, int r, unsigned char color)  // Sans clipping
+{
+    int x = 0;
+    int y = r;
+    int d = 3 - 2 * r;
+
+    while (x <= y)
+    {
+        // Pour chaque paire de points symétriques, remplir la ligne horizontale
+        _fmemset(backbuffer + OFFSET(xc - x, yc - y), color, 2 * x + 1);
+        _fmemset(backbuffer + OFFSET(xc - x, yc + y), color, 2 * x + 1);
+        _fmemset(backbuffer + OFFSET(xc - y, yc - x), color, 2 * y + 1);
+        _fmemset(backbuffer + OFFSET(xc - y, yc + x), color, 2 * y + 1);
+
+        if (d < 0)
+        {
+            d += 4 * x + 6;
+        }
+        else
+        {
+            d += 4 * (x - y) + 10;
+            y--;
+        }
+        x++;
+    }
+}
+*/
 /* =========================================================
    TOOLS / DEBUG
    ========================================================= */
@@ -591,7 +727,7 @@ void sceneRandom(void)
         
         ////////////////////////////////////////////////////////////////
 
-        lastRender += (render_interval_ms * TARGET_HZ) / 1000UL;
+        lastRender += (render_interval_ms * TARGET_HZ) / 1000UL;  // Avance lastRender de l'intervalle de frame, ce qui permet de maintenir un rythme stable même si certaines frames prennent plus de temps à dessiner
     }
 
     if (elapsedTimeMs(sceneStart, now) > scene_ms)
@@ -714,21 +850,21 @@ void sceneEnd(void)
         clearScreen(127);
         drawRectFill(10, 10, 50, 30, 0);
         drawRect(269, 10, 309, 30, 1);
-        drawCircle(160, 100, 60, 255);
+        drawCircle(160, 100, 120, 255);
+        drawCircleFill(200, 150, 100, 200);
         drawLine(0, 0, 319, 199, 1);
+        drawCircleFill(50, 150, 10, 0);
         flip();
             
         ////////////////////////////////////////////////////////////////
 
-        //lastRender += (render_interval_ms * TARGET_HZ) / 1000UL;
-        lastRender = now; // Réinitialise lastRender avec l'heure actuelle
+        lastRender += (render_interval_ms * TARGET_HZ) / 1000UL;  // Avance lastRender de l'intervalle de frame, ce qui permet de maintenir un rythme stable même si certaines frames prennent plus de temps à dessiner
+        // lastRender = now; // Réinitialise lastRender à l'heure actuelle, utile si on veut simplement attendre "render_interval_ms" depuis la dernière boucle terminée, mais peut faire rater des frames si la boucle est lente
     }
-
-    // Quitte après scene_ms
-    if (elapsedTimeMs(sceneStart, now) > scene_ms)
-    {
-        setScene(SCENE_RANDOM);
-    }
+    
+    getch();  // Attendre une touche
+    
+    setScene(SCENE_RANDOM);
 }
 
 /* =========================================================
