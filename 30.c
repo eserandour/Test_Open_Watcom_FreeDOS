@@ -3,7 +3,7 @@
    Open Watcom 1.9 sous FreeDOS 1.4
    
    PROJET DOS 16 bits (mode 13h)
-   Version : 22/04/2026 à 13:36
+   Version : 22/04/2026 à 23:18
    ========================================================= */
 
 /* =========================================================
@@ -32,7 +32,7 @@
 #define BACKBUFFER_SIZE 64000UL  // 320 * 200 (mode 13h, 1 octet/pixel) - UL : Unsigned Long
 
 #define VGA_SEG 0xA000
-#define VGA_OFF 0x0000
+// #define VGA_OFF 0x0000
 
 #define PIT_FREQ 1193180UL  // La fréquence de l'horloge du Programmable Interval Timer (PIT) est de 1 193 180 Hz. C’est la fréquence de base utilisée dans les systèmes DOS pour gérer les temporisations.
 #define TARGET_HZ 70  // La fréquence cible de l'intervalle du timer, ici 70 Hz. Cela signifie que nous voulons que notre timer déclenche une interruption 70 fois par seconde.
@@ -251,7 +251,7 @@ typedef struct {
 } Color;
 
 Color defaultPalette[256];           // Palette VGA par défaut
-Color currentPalette[256];           // Palette en cours d'utilisation
+Color workingPalette[256];           // Palette en cours
 Color paletteA[256], paletteB[256];  // Palettes temporaires pour interpolations
 Color grayPalette[256];              // Palette dégradé noir => blanc
 Color pinkPalette[256];              // Palette noir + dégradé rouge => blanc
@@ -289,7 +289,7 @@ void getPalette(Color *pal)
 }
 
 /* Copie une palette source vers une palette destination */
-void copyPalette(Color *src, Color *dest)
+void copyPalette(Color *dest, Color *src)
 {
     int i;
     
@@ -569,7 +569,8 @@ void sceneRandom(void)
     unsigned long render_interval_ms = 100UL;  // Durée entre 2 frames
     unsigned long scene_ms = 5000UL; // Durée de la scène
 
-    setPalette(defaultPalette);
+    copyPalette(workingPalette, defaultPalette);
+    setPalette(workingPalette);
     clearScreen(0);  
     
     while (elapsedTimeMs(lastRender, now) >= render_interval_ms)
@@ -618,20 +619,20 @@ void scenePalette(void)
 
     clearScreen(0);
 
-    // 1) Fade-in depuis le noir vers defaultPalette
+    // 1) Fade-in depuis le noir vers workingPalette (= defaultPalette)
     if (elapsed < DURATION_FADE_IN)
     {
         float t = (float)elapsed / (float)DURATION_FADE_IN; // 0 → 1
-        fadePalette(defaultPalette, t);
+        fadePalette(workingPalette, t);
         drawPaletteGrid();
         flip();
         return;
     }
 
-    // 2) Affichage statique de defaultPalette
+    // 2) Affichage statique de workingPalette (= defaultPalette)
     else if (elapsed < DURATION_FADE_IN + DURATION_STATIC_DEFAULT)
     {
-        setPalette(defaultPalette);
+        //setPalette(workingPalette);
         drawPaletteGrid();
         flip();
         return;
@@ -642,7 +643,7 @@ void scenePalette(void)
     {
         if (elapsedTimeMs(lastRender, now) >= render_interval_ms)
         {
-            cyclePaletteRight(defaultPalette, 0, 255);
+            cyclePaletteRight(workingPalette, 0, 255);
             drawPaletteGrid();
             flip();
             lastRender = now;
@@ -655,7 +656,7 @@ void scenePalette(void)
     {
         if (elapsedTimeMs(lastRender, now) >= render_interval_ms)
         {
-            cyclePaletteLeft(defaultPalette, 0, 255);
+            cyclePaletteLeft(workingPalette, 0, 255);
             drawPaletteGrid();
             flip();
             lastRender = now;
@@ -668,8 +669,10 @@ void scenePalette(void)
     {
         unsigned long fadeElapsed = elapsed - (DURATION_FADE_IN + DURATION_STATIC_DEFAULT + DURATION_RIGHT + DURATION_LEFT);
         float t = (float)fadeElapsed / (float)DURATION_FADE_TO_PINK; // 0 → 1
-        lerpPalette(currentPalette, defaultPalette, pinkPalette, t); // Interpolation
-        setPalette(currentPalette);
+        copyPalette(paletteA, workingPalette);
+        copyPalette(paletteB, pinkPalette);
+        lerpPalette(workingPalette, paletteA, paletteB, t); // Interpolation
+        setPalette(workingPalette);
         drawPaletteGrid();
         flip();
         return;
@@ -747,8 +750,9 @@ int main(void)
     setVideoMode(0x13);  // Passage en mode VGA 13h (320x200x256)
     
     getPalette(defaultPalette);  // Sauvegarder la palette par défaut
+    copyPalette(workingPalette, defaultPalette);  // En faire une copie dans workingPalette
     generatePinkPalette(pinkPalette);  // Génère une palette (noir + dégradé rouge => blanc)
-        
+       
     installTimer();  // Initialisation du timer
     
     setScene(SCENE_RANDOM);
