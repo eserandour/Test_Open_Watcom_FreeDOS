@@ -2,7 +2,7 @@
    ENVIRONNEMENT
    Open Watcom 1.9 sous FreeDOS 1.4
    
-   PROJET DOS 16 bits
+   PROJET DOS 16 bits (mode 13h)
    Version : 22/04/2026 à 12:38
    ========================================================= */
    
