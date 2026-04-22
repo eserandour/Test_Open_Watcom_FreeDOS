@@ -3,9 +3,8 @@
    Open Watcom 1.9 sous FreeDOS 1.4
    
    PROJET DOS 16 bits (mode 13h)
-   Version : 22/04/2026 à 12:38
+   Version : 22/04/2026 à 12:42
    ========================================================= */
-   
 
 /* =========================================================
    INCLUDES
@@ -151,16 +150,6 @@ void pause(unsigned long ms)
    ========================================================= */
    
 /* Initialise le backbuffer (allocation FAR 64000 octets) */
-/*
-int initBackbuffer(void)
-{
-    backbuffer = (unsigned char far *)_fmalloc(BACKBUFFER_SIZE);
-    if (!backbuffer) return 0;  // Échec allocation
-     _fmemset(backbuffer, 0, BACKBUFFER_SIZE);  // Nettoyage de l'écran (en noir)
-    return 1; // Succès
-}
-*/
-
 int initBackbuffer(void)
 {
     backbuffer = (unsigned char far *)_fmalloc(BACKBUFFER_SIZE);
