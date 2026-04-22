@@ -134,7 +134,7 @@ unsigned long elapsedTimeMs(unsigned long start, unsigned long stop)
     return (elapsedTime(start, stop) * 1000UL) / TARGET_HZ;
 }
 
-/* Pause en ms : remplay delay qui n'est pas du tout précis */
+/* Pause en ms : remplace delay qui n'est pas du tout précis */
 void pause(unsigned long ms)
 {
     unsigned long start = timer_ticks;
