@@ -193,7 +193,7 @@ void setVideoMode(unsigned char mode)
     int86(0x10, &regs, &regs);
 }
 
-/* Fonction pour désactiver le curseur (appelle une interruption BIOS) */
+/* Fonction pour désactiver le curseur */
 void cursorOff() {
     _asm {
         mov ah, 01h     // Fonction 01h du BIOS : Définir la taille du curseur
