@@ -1,10 +1,10 @@
 /* =========================================================
-   ENVIRONNEMENT
+   ENVIRONNEMENT & META
+   =========================================================
    Open Watcom 1.9 sous FreeDOS 1.4
-   
-   PROJET DOS 16 bits (mode 13h)
-   Version : 23/04/2026 à 01:06
-   ========================================================= */
+   Projet DOS 16 bits (mode 13h)
+   Version : 27/04/2026 à 21:30
+*/
 
 /* =========================================================
    INCLUDES
@@ -24,7 +24,7 @@
 */
 
 /* =========================================================
-   CONFIG
+   CONSTANTES & CONFIGURATION
    ========================================================= */
 
 #define SCREEN_WIDTH  320
@@ -34,27 +34,58 @@
 #define VGA_SEG 0xA000
 // #define VGA_OFF 0x0000
 
+// Timer
 #define PIT_FREQ 1193180UL  // La fréquence de l'horloge du Programmable Interval Timer (PIT) est de 1 193 180 Hz. C’est la fréquence de base utilisée dans les systèmes DOS pour gérer les temporisations.
 #define TARGET_HZ 70  // La fréquence cible de l'intervalle du timer, ici 70 Hz. Cela signifie que nous voulons que notre timer déclenche une interruption 70 fois par seconde.
 #define DIVISOR (PIT_FREQ / TARGET_HZ)  // Le diviseur nécessaire pour configurer le PIT à 70 Hz.
 // #define BIOS_HZ (PIT_FREQ / 65536) // 18.20648193 Hz
 
+// Offset calcul
+#define OFFSET(x,y) ((y<<8) + (y<<6) + x)  // y * 320 + x
+
 /* =========================================================
-   VIDEO MEMORY
+   STRUCTURES & TYPES
    ========================================================= */
 
-// Pointeur vers la mémoire vidéo VGA (mode 13h) - Utilisé exclusivement dans la version de flip la moins rapide
+typedef struct {
+    unsigned char r, g, b;
+} Color;
+
+typedef enum {
+    SCENE_RANDOM,
+    SCENE_PALETTE,
+    SCENE_END
+} Scene;
+
+/* =========================================================
+   VARIABLES GLOBALES
+   ========================================================= */
+   
+// Pointeur vers la mémoire vidéo VGA (mode 13h) - Utilisé dans la version de flip avec _fmemcpy
 // unsigned char far *vga = (unsigned char far *)MK_FP(VGA_SEG, VGA_OFF);
-// Buffer mémoire hors écran (double buffering)
-unsigned char far *backbuffer = NULL;
+
+// Pointeur vers le backbuffer (double buffering)
+unsigned char far *backbuffer = NULL;  
+
+// Timer 
+volatile unsigned long timer_ticks = 0;  // Cette variable est utilisée pour compter les ticks (intervalles de temps) de notre timer.
+void interrupt (far *old_timer_isr)();  // Un pointeur vers la fonction ISR (Interrupt Service Routine) d'origine.
+static unsigned long accum = 0;
+
+// Palettes
+Color defaultPalette[256];           // Palette VGA par défaut
+Color workingPalette[256];           // Palette en cours
+Color paletteA[256], paletteB[256];  // Palettes temporaires pour interpolations
+Color grayPalette[256];              // Palette dégradé noir => blanc
+Color pinkPalette[256];              // Palette noir + dégradé rouge => blanc
+   
+// Scènes
+Scene currentScene;
+unsigned long sceneStart;
 
 /* =========================================================
    TIMER SYSTEM
    ========================================================= */
-
-volatile unsigned long timer_ticks = 0;  // Cette variable est utilisée pour compter les ticks (intervalles de temps) de notre timer.
-void interrupt (far *old_timer_isr)();  // Un pointeur vers la fonction ISR (Interrupt Service Routine) d'origine.
-static unsigned long accum = 0;
 
 /* ISR principale (cœur du système) */
 void interrupt new_timer_isr()
@@ -82,7 +113,7 @@ void interrupt new_timer_isr()
 void installTimer(void)
 {
     _disable();  // Désactive les interruptions globales
-
+    
     old_timer_isr = _dos_getvect(0x08);  // Sauvegarde de l'ISR original
     _dos_setvect(0x08, new_timer_isr);   // Remplace l'ISR avec notre fonction
 
@@ -90,7 +121,7 @@ void installTimer(void)
     outp(0x43, 0x36);                    // Mode 3, wave carrée
     outp(0x40, DIVISOR & 0xFF);          // Byte bas
     outp(0x40, DIVISOR >> 8);            // Byte haut
-
+    
     _enable();  // Réactive les interruptions globales
 }
 
@@ -108,10 +139,6 @@ void restoreTimer(void)
 
     _enable();  // Réactive les interruptions globales
 }
-
-/* =========================================================
-   TIME HELPERS
-   ========================================================= */
 
 /* Retourne le nombre actuel de ticks */
 unsigned long readTimer(void)
@@ -171,7 +198,7 @@ void freeBackbuffer(void)
 }
 
 /* =========================================================
-   VIDEO MODE
+   VIDEO MODE & CURSEUR
    ========================================================= */
 
 /* Change le mode vidéo via interruption 10h du BIOS */
@@ -202,11 +229,11 @@ void cursorOn() {
 }
 
 /* =========================================================
-   VIDEO FLIP
+   VIDEO FLIP (DOUBLE BUFFERING)
    ========================================================= */
 
 /* Copie le backbuffer vers la VRAM (affichage) */
-void flip(void)  // Optimisé
+void flip(void)
 {
     unsigned char far *src = backbuffer;
     
@@ -226,7 +253,7 @@ void flip(void)  // Optimisé
     }
 }
 /*
-void flip()  // Moins rapide à priori
+void flip()  // Alternative
 {
     movedata(
         FP_SEG(backbuffer), FP_OFF(backbuffer),
@@ -236,7 +263,7 @@ void flip()  // Moins rapide à priori
 }
 */
 /*
-void flip()  // Encore moins rapide à priori
+void flip()    // Autre alternative
 {
     _fmemcpy(vga, backbuffer, BACKBUFFER_SIZE);
 }
@@ -245,16 +272,6 @@ void flip()  // Encore moins rapide à priori
 /* =========================================================
    VIDEO PALETTE VGA (256 couleurs)
    ========================================================= */
-
-typedef struct {
-    unsigned char r, g, b;
-} Color;
-
-Color defaultPalette[256];           // Palette VGA par défaut
-Color workingPalette[256];           // Palette en cours
-Color paletteA[256], paletteB[256];  // Palettes temporaires pour interpolations
-Color grayPalette[256];              // Palette dégradé noir => blanc
-Color pinkPalette[256];              // Palette noir + dégradé rouge => blanc
 
 /* Définit une couleur individuelle dans la palette VGA */
 void setPaletteColor(unsigned char index, unsigned char r, unsigned char g, unsigned char b)
@@ -391,10 +408,8 @@ void generatePinkPalette(Color *pal)
 }
 
 /* =========================================================
-   GRAPHICS CORE
+   GRAPHICS CORE (PRIMITIVES)
    ========================================================= */
-
-#define OFFSET(x,y) ((y<<8) + (y<<6) + x)  // Calcul offset : (y << 8) + (y << 6) + x = y * 320 + x
 
 /* Efface l'écran en remplissant le backbuffer avec une couleur uniforme */
 void clearScreen(unsigned char color)
@@ -455,6 +470,7 @@ void drawRectFill(int x1, int y1, int x2, int y2, unsigned char color)
         _fmemset(backbuffer + offset, color, x2 - x1 + 1);
     }
 }
+
 /* Dessine un Cercle (algorithme de tracé d'arc de cercle de Bresenham) */
 void drawCircle(int xc, int yc, int r, unsigned char color)  // Avec clipping
 {
@@ -677,15 +693,6 @@ void drawPaletteGradient(void)
    SCENE SYSTEM
    ========================================================= */
 
-typedef enum {
-    SCENE_RANDOM,
-    SCENE_PALETTE,
-    SCENE_END
-} Scene;
-
-Scene currentScene;
-unsigned long sceneStart;
-
 /* Changer de scène */
 void setScene(Scene s)
 {
@@ -843,7 +850,6 @@ void sceneEnd(void)
         // Logique de la scène /////////////////////////////////////////
 
                
-                
         
         // Dessin backbuffer ///////////////////////////////////////////
         
@@ -870,13 +876,13 @@ void sceneEnd(void)
 /* =========================================================
    MAIN LOOP
    ========================================================= */
-   
+
 typedef void (*SceneFunc)(void);
 SceneFunc scenes[] =  // Tableau de fonctions
 {
-	sceneRandom,
-	scenePalette,
-	sceneEnd
+    sceneRandom,
+    scenePalette,
+    sceneEnd
 };
 
 int main(void)
