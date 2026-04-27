@@ -23,19 +23,17 @@
    CONSTANTES & CONFIGURATION
    ========================================================= */
 
+// Vidéo
 #define SCREEN_WIDTH  320
 #define SCREEN_HEIGHT 200
 #define BACKBUFFER_SIZE 64000UL  // 320 * 200 (mode 13h, 1 octet/pixel) - UL : Unsigned Long
-
 #define VGA_SEG 0xA000
+#define OFFSET(x,y) ((y<<8) + (y<<6) + x)  // Equivalent à y * 320 + x (optimisé pour le calcul rapide)
 
 // Timer
 #define PIT_FREQ 1193180UL  // La fréquence de l'horloge du Programmable Interval Timer (PIT) est de 1 193 180 Hz. C’est la fréquence de base utilisée dans les systèmes DOS pour gérer les temporisations.
 #define TARGET_HZ 70  // La fréquence cible de l'intervalle du timer, ici 70 Hz. Cela signifie que nous voulons que notre timer déclenche une interruption 70 fois par seconde.
 #define DIVISOR (PIT_FREQ / TARGET_HZ)  // Le diviseur nécessaire pour configurer le PIT à 70 Hz.
-
-// Offset calcul
-#define OFFSET(x,y) ((y<<8) + (y<<6) + x)  // Equivalent à y * 320 + x (optimisé pour le calcul rapide)
 
 /* =========================================================
    STRUCTURES & TYPES
