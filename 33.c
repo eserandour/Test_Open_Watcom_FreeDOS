@@ -3,7 +3,7 @@
    =========================================================
    Open Watcom 1.9 sous FreeDOS 1.4
    Projet DOS 16 bits (mode 13h)
-   Version : 27/04/2026 à 21:30
+   Version : 27/04/2026 à 23:27
 */
 
 /* =========================================================
@@ -18,10 +18,6 @@
 #include <conio.h>   // Fonctions console DOS
 #include <time.h>    // Gestion du temps et des dates
 #include <math.h>    // Fonctions mathématiques
-/*
-#include <graph.h>   // Graphismes Watcom
-#include <ctype.h>   // Fonctions pour tester ou transformer des caractères
-*/
 
 /* =========================================================
    CONSTANTES & CONFIGURATION
@@ -32,16 +28,14 @@
 #define BACKBUFFER_SIZE 64000UL  // 320 * 200 (mode 13h, 1 octet/pixel) - UL : Unsigned Long
 
 #define VGA_SEG 0xA000
-// #define VGA_OFF 0x0000
 
 // Timer
 #define PIT_FREQ 1193180UL  // La fréquence de l'horloge du Programmable Interval Timer (PIT) est de 1 193 180 Hz. C’est la fréquence de base utilisée dans les systèmes DOS pour gérer les temporisations.
 #define TARGET_HZ 70  // La fréquence cible de l'intervalle du timer, ici 70 Hz. Cela signifie que nous voulons que notre timer déclenche une interruption 70 fois par seconde.
 #define DIVISOR (PIT_FREQ / TARGET_HZ)  // Le diviseur nécessaire pour configurer le PIT à 70 Hz.
-// #define BIOS_HZ (PIT_FREQ / 65536) // 18.20648193 Hz
 
 // Offset calcul
-#define OFFSET(x,y) ((y<<8) + (y<<6) + x)  // y * 320 + x
+#define OFFSET(x,y) ((y<<8) + (y<<6) + x)  // Equivalent à y * 320 + x (optimisé pour le calcul rapide)
 
 /* =========================================================
    STRUCTURES & TYPES
@@ -54,15 +48,12 @@ typedef struct {
 typedef enum {
     SCENE_RANDOM,
     SCENE_PALETTE,
-    SCENE_END
+    SCENE_END,
 } Scene;
 
 /* =========================================================
    VARIABLES GLOBALES
    ========================================================= */
-   
-// Pointeur vers la mémoire vidéo VGA (mode 13h) - Utilisé dans la version de flip avec _fmemcpy
-// unsigned char far *vga = (unsigned char far *)MK_FP(VGA_SEG, VGA_OFF);
 
 // Pointeur vers le backbuffer (double buffering)
 unsigned char far *backbuffer = NULL;  
@@ -73,11 +64,11 @@ void interrupt (far *old_timer_isr)();  // Un pointeur vers la fonction ISR (Int
 static unsigned long accum = 0;
 
 // Palettes
-Color defaultPalette[256];           // Palette VGA par défaut
-Color workingPalette[256];           // Palette en cours
-Color paletteA[256], paletteB[256];  // Palettes temporaires pour interpolations
-Color grayPalette[256];              // Palette dégradé noir => blanc
-Color pinkPalette[256];              // Palette noir + dégradé rouge => blanc
+Color defaultPalette[256];                 // Palette VGA par défaut
+Color workingPalette[256];                 // Palette en cours
+Color paletteStart[256], paletteEnd[256];  // Palettes temporaires pour interpolations
+Color grayPalette[256];                    // Palette dégradé noir => blanc
+Color pinkPalette[256];                    // Palette noir + dégradé rouge => blanc
    
 // Scènes
 Scene currentScene;
@@ -90,7 +81,7 @@ unsigned long sceneStart;
 /* ISR principale (cœur du système) */
 void interrupt new_timer_isr()
 {
-    timer_ticks++;
+    timer_ticks++;  // Incrémente le compteur de ticks
     accum += DIVISOR;  // Accumule les ticks
     if (accum >= 65536UL)
     {
@@ -102,13 +93,7 @@ void interrupt new_timer_isr()
         outp(0x20, 0x20);  // Envoyer un signal d'acknowledgment (ACK) au PIC (Programmable Interrupt Controller)
     }
 }
-/*
-void interrupt new_timer_isr()
-{
-    timer_ticks++;  // Incrémente le compteur de ticks
-    outp(0x20, 0x20);  // Envoyer un signal d'acknowledgment (ACK) au PIC (Programmable Interrupt Controller)
-}
-*/
+
 /* Installation du timer */
 void installTimer(void)
 {
@@ -252,22 +237,6 @@ void flip(void)
         pop ds
     }
 }
-/*
-void flip()  // Alternative
-{
-    movedata(
-        FP_SEG(backbuffer), FP_OFF(backbuffer),
-        VGA_SEG, VGA_OFF,
-        BACKBUFFER_SIZE
-    );
-}
-*/
-/*
-void flip()    // Autre alternative
-{
-    _fmemcpy(vga, backbuffer, BACKBUFFER_SIZE);
-}
-*/
 
 /* =========================================================
    VIDEO PALETTE VGA (256 couleurs)
@@ -513,33 +482,7 @@ void drawCircle(int xc, int yc, int r, unsigned char color)  // Avec clipping
         x++;
     }
 }
-/*
-void drawCircle(int xc, int yc, int r, unsigned char color)  // Sans clipping
-{
-    int x = 0;
-    int y = r;
-    int d = 3 - 2 * r;
 
-    while (x <= y)
-    {
-        putPixel(xc + x, yc + y, color);
-        putPixel(xc - x, yc + y, color);
-        putPixel(xc + x, yc - y, color);
-        putPixel(xc - x, yc - y, color);
-        putPixel(xc + y, yc + x, color);
-        putPixel(xc - y, yc + x, color);
-        putPixel(xc + y, yc - x, color);
-        putPixel(xc - y, yc - x, color);
-
-        if (d < 0) d += 4 * x + 6;
-        else {
-            d += 4 * (x - y) + 10;
-            y--;
-        }
-        x++;
-    }
-}
-*/
 /* Dessine un Cercle plein */
 void drawCircleFill(int xc, int yc, int r, unsigned char color)  // Avec clipping
 {
@@ -603,34 +546,7 @@ void drawCircleFill(int xc, int yc, int r, unsigned char color)  // Avec clippin
         x++;
     }
 }
-/*
-void drawCircleFill(int xc, int yc, int r, unsigned char color)  // Sans clipping
-{
-    int x = 0;
-    int y = r;
-    int d = 3 - 2 * r;
 
-    while (x <= y)
-    {
-        // Pour chaque paire de points symétriques, remplir la ligne horizontale
-        _fmemset(backbuffer + OFFSET(xc - x, yc - y), color, 2 * x + 1);
-        _fmemset(backbuffer + OFFSET(xc - x, yc + y), color, 2 * x + 1);
-        _fmemset(backbuffer + OFFSET(xc - y, yc - x), color, 2 * y + 1);
-        _fmemset(backbuffer + OFFSET(xc - y, yc + x), color, 2 * y + 1);
-
-        if (d < 0)
-        {
-            d += 4 * x + 6;
-        }
-        else
-        {
-            d += 4 * (x - y) + 10;
-            y--;
-        }
-        x++;
-    }
-}
-*/
 /* =========================================================
    TOOLS / DEBUG
    ========================================================= */
@@ -755,8 +671,7 @@ void scenePalette(void)
     const unsigned long DURATION_STATIC_DEFAULT  = 1000UL;  // Affichage statique defaultPalette
     const unsigned long DURATION_RIGHT           = 5000UL;  // Cycle vers la droite
     const unsigned long DURATION_LEFT            = 5000UL;  // Cycle vers la gauche
-    const unsigned long DURATION_FADE_TO_PINK    = 3000UL;  // Fade vers pinkPalette
-    const unsigned long DURATION_STATIC_PINK     = 4000UL;  // Affichage statique pinkPalette
+    const unsigned long DURATION_FADE_TO_PINK    = 5000UL;  // Fade vers pinkPalette
 
     unsigned long elapsed = elapsedTimeMs(sceneStart, now);
 
@@ -775,7 +690,6 @@ void scenePalette(void)
     // 2) Affichage statique de workingPalette (= defaultPalette)
     else if (elapsed < DURATION_FADE_IN + DURATION_STATIC_DEFAULT)
     {
-        //setPalette(workingPalette);
         drawPaletteGrid();
         flip();
         return;
@@ -812,25 +726,16 @@ void scenePalette(void)
     {
         unsigned long fadeElapsed = elapsed - (DURATION_FADE_IN + DURATION_STATIC_DEFAULT + DURATION_RIGHT + DURATION_LEFT);
         float t = (float)fadeElapsed / (float)DURATION_FADE_TO_PINK; // 0 → 1
-        copyPalette(paletteA, workingPalette);
-        copyPalette(paletteB, pinkPalette);
-        lerpPalette(workingPalette, paletteA, paletteB, t); // Interpolation
+        copyPalette(paletteStart, workingPalette);
+        copyPalette(paletteEnd, pinkPalette);
+        lerpPalette(workingPalette, paletteStart, paletteEnd, t); // Interpolation
         setPalette(workingPalette);
         drawPaletteGrid();
         flip();
         return;
     }
 
-    // 6) Affichage statique de pinkPalette
-    else if (elapsed < DURATION_FADE_IN + DURATION_STATIC_DEFAULT + DURATION_RIGHT + DURATION_LEFT + DURATION_FADE_TO_PINK + DURATION_STATIC_PINK)
-    {
-        setPalette(pinkPalette);
-        drawPaletteGrid();
-        flip();
-        return;
-    }
-
-    // 7) Fin de la scène
+    // 6) Fin de la scène
     else
     {
         setScene(SCENE_END);
@@ -882,7 +787,7 @@ SceneFunc scenes[] =  // Tableau de fonctions
 {
     sceneRandom,
     scenePalette,
-    sceneEnd
+    sceneEnd,
 };
 
 int main(void)
