@@ -3,7 +3,8 @@
    =========================================================
    Open Watcom 1.9 sous FreeDOS 1.4
    Projet DOS 16 bits (mode 13h)
-   Version : 27/04/2026 à 23:27
+   Version : 30/04/2026 à 01:05
+   Pour compiler : wcl demo.c -q
 */
 
 /* =========================================================
@@ -22,6 +23,11 @@
 /* =========================================================
    CONSTANTES & CONFIGURATION
    ========================================================= */
+   
+// Timer
+#define PIT_FREQ 1193180UL  // La fréquence de l'horloge du Programmable Interval Timer (PIT) est de 1 193 180 Hz. C’est la fréquence de base utilisée dans les systèmes DOS pour gérer les temporisations.
+#define TARGET_HZ 70  // La fréquence cible de l'intervalle du timer, ici 70 Hz. Cela signifie que nous voulons que notre timer déclenche une interruption 70 fois par seconde.
+#define DIVISOR (PIT_FREQ / TARGET_HZ)  // Le diviseur nécessaire pour configurer le PIT à 70 Hz.
 
 // Vidéo
 #define SCREEN_WIDTH  320
@@ -29,11 +35,6 @@
 #define BACKBUFFER_SIZE 64000UL  // 320 * 200 (mode 13h, 1 octet/pixel) - UL : Unsigned Long
 #define VGA_SEG 0xA000
 #define OFFSET(x,y) ((y<<8) + (y<<6) + x)  // Equivalent à y * 320 + x (optimisé pour le calcul rapide)
-
-// Timer
-#define PIT_FREQ 1193180UL  // La fréquence de l'horloge du Programmable Interval Timer (PIT) est de 1 193 180 Hz. C’est la fréquence de base utilisée dans les systèmes DOS pour gérer les temporisations.
-#define TARGET_HZ 70  // La fréquence cible de l'intervalle du timer, ici 70 Hz. Cela signifie que nous voulons que notre timer déclenche une interruption 70 fois par seconde.
-#define DIVISOR (PIT_FREQ / TARGET_HZ)  // Le diviseur nécessaire pour configurer le PIT à 70 Hz.
 
 /* =========================================================
    STRUCTURES & TYPES
@@ -53,20 +54,20 @@ typedef enum {
    VARIABLES GLOBALES
    ========================================================= */
 
-// Pointeur vers le backbuffer (double buffering)
-unsigned char far *backbuffer = NULL;  
-
 // Timer 
 volatile unsigned long timer_ticks = 0;  // Cette variable est utilisée pour compter les ticks (intervalles de temps) de notre timer.
 void interrupt (far *old_timer_isr)();  // Un pointeur vers la fonction ISR (Interrupt Service Routine) d'origine.
 static unsigned long accum = 0;
 
+// Pointeur vers le backbuffer (double buffering)
+unsigned char far *backbuffer = NULL;  
+
 // Palettes
-Color defaultPalette[256];                 // Palette VGA par défaut
-Color workingPalette[256];                 // Palette en cours
-Color paletteStart[256], paletteEnd[256];  // Palettes temporaires pour interpolations
-Color grayPalette[256];                    // Palette dégradé noir => blanc
-Color pinkPalette[256];                    // Palette noir + dégradé rouge => blanc
+Color defaultPalette[256];           // Palette VGA par défaut
+Color workingPalette[256];           // Palette en cours
+Color paletteA[256], paletteB[256];  // Palettes temporaires pour interpolations
+Color grayPalette[256];              // Palette dégradé noir => blanc
+Color pinkPalette[256];              // Palette noir + dégradé rouge => blanc
    
 // Scènes
 Scene currentScene;
@@ -156,31 +157,6 @@ void pause(unsigned long ms)
 }
 
 /* =========================================================
-   MEMORY (BACKBUFFER)
-   ========================================================= */
-   
-/* Initialise le backbuffer (allocation FAR 64000 octets) */
-int initBackbuffer(void)
-{
-    backbuffer = (unsigned char far *)_fmalloc(BACKBUFFER_SIZE);
-    if (!backbuffer) {
-        printf("Erreur : Impossible d'allouer le backbuffer (64000 octets requis).\n");
-        return 0;  // Échec allocation
-    }
-    _fmemset(backbuffer, 0, BACKBUFFER_SIZE);  // Nettoyage de l'écran (en noir)
-    return 1; // Succès
-}
-
-/* Libère le backbuffer */
-void freeBackbuffer(void)
-{
-    if (backbuffer) {
-        _ffree(backbuffer);
-        backbuffer = NULL; // Évite pointeur invalide
-    }
-}
-
-/* =========================================================
    VIDEO MODE & CURSEUR
    ========================================================= */
 
@@ -212,8 +188,29 @@ void cursorOn() {
 }
 
 /* =========================================================
-   VIDEO FLIP (DOUBLE BUFFERING)
+   BACKBUFFER (DOUBLE BUFFERING)
    ========================================================= */
+   
+/* Initialise le backbuffer (allocation FAR 64000 octets) */
+int initBackbuffer(void)
+{
+    backbuffer = (unsigned char far *)_fmalloc(BACKBUFFER_SIZE);
+    if (!backbuffer) {
+        printf("Erreur : Impossible d'allouer le backbuffer (64000 octets requis).\n");
+        return 0;  // Échec allocation
+    }
+    _fmemset(backbuffer, 0, BACKBUFFER_SIZE);  // Nettoyage de l'écran (en noir)
+    return 1; // Succès
+}
+
+/* Libère le backbuffer */
+void freeBackbuffer(void)
+{
+    if (backbuffer) {
+        _ffree(backbuffer);
+        backbuffer = NULL; // Évite pointeur invalide
+    }
+}
 
 /* Copie le backbuffer vers la VRAM (affichage) */
 void flip(void)
@@ -222,16 +219,12 @@ void flip(void)
     
     _asm {
         push ds
-
         mov ax, VGA_SEG
         mov es, ax
         xor di, di
-
         lds si, src
-
-        mov cx, 32000     ; 64000 / 2 (word copy)
-        rep movsw
-
+        mov cx, 32000  // 64000 / 2 (car on copie des mots)
+        rep movsw      // Copie 32000 mots = 64000 octets
         pop ds
     }
 }
@@ -281,7 +274,7 @@ void copyPalette(Color *dest, Color *src)
 }
 
 /* Interpolation linéaire entre deux palettes (palA => palB) */
-void lerpPalette(Color *dest, Color *palA, Color *palB, float t)  // t varie de 0 à 1. 0 → palette A, 1 → palette B.
+void lerpPalette(Color *dest, Color *palA, Color *palB, float t)  // t varie de 0 à 1 (0 => palette A, 1 => palette B)
 {
     int i;
     
@@ -604,19 +597,15 @@ void drawPaletteGradient(void)
 }
 
 /* =========================================================
-   SCENE SYSTEM
+   SCENES
    ========================================================= */
-
+   
 /* Changer de scène */
 void setScene(Scene s)
 {
     currentScene = s;
     sceneStart = readTimer();
 }
-
-/* =========================================================
-   SCENES
-   ========================================================= */
 
 /* SCENE 1 : pixels random */
 void sceneRandom(void)
@@ -724,9 +713,9 @@ void scenePalette(void)
     {
         unsigned long fadeElapsed = elapsed - (DURATION_FADE_IN + DURATION_STATIC_DEFAULT + DURATION_RIGHT + DURATION_LEFT);
         float t = (float)fadeElapsed / (float)DURATION_FADE_TO_PINK; // 0 → 1
-        copyPalette(paletteStart, workingPalette);
-        copyPalette(paletteEnd, pinkPalette);
-        lerpPalette(workingPalette, paletteStart, paletteEnd, t); // Interpolation
+        copyPalette(paletteA, workingPalette);
+        copyPalette(paletteB, pinkPalette);
+        lerpPalette(workingPalette, paletteA, paletteB, t); // Interpolation
         setPalette(workingPalette);
         drawPaletteGrid();
         flip();
@@ -756,13 +745,7 @@ void sceneEnd(void)
         
         // Dessin backbuffer ///////////////////////////////////////////
         
-        clearScreen(127);
-        drawRectFill(10, 10, 50, 30, 0);
-        drawRect(269, 10, 309, 30, 1);
-        drawCircle(160, 100, 120, 255);
-        drawCircleFill(200, 150, 100, 200);
-        drawLine(0, 0, 319, 199, 1);
-        drawCircleFill(50, 150, 10, 0);
+        clearScreen(0);
         flip();
             
         ////////////////////////////////////////////////////////////////
@@ -790,13 +773,15 @@ SceneFunc scenes[] =  // Tableau de fonctions
 
 int main(void)
 {
+    int i, j;
+    
     srand(time(0));  // Initialise le générateur de nombres aléatoires avec l'heure actuelle
     if (!initBackbuffer()) return 1;  // Allocation mémoire
     setVideoMode(0x13);  // Passage en mode VGA 13h (320x200x256)
     
     getPalette(defaultPalette);  // Sauvegarder la palette par défaut
     copyPalette(workingPalette, defaultPalette);  // En faire une copie dans workingPalette
-    generatePinkPalette(pinkPalette);  // Génère une palette (noir + dégradé rouge => blanc)
+    generatePinkPalette(pinkPalette);  // Génère la palette pinkPalette (noir + dégradé rouge => blanc)
        
     installTimer();  // Initialisation du timer
     
