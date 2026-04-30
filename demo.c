@@ -160,30 +160,33 @@ void pause(unsigned long ms)
    VIDEO MODE & CURSEUR
    ========================================================= */
 
-/* Change le mode vidéo via interruption 10h du BIOS */
+/* Change le mode vidéo */
 void setVideoMode(unsigned char mode)
 {
-    union REGS regs;
-    regs.h.ah = 0x00;   // Fonction: set video mode
-    regs.h.al = mode;   // Mode (ex: 13h)
-    int86(0x10, &regs, &regs);
-}
-
-/* Fonction pour désactiver le curseur */
-void cursorOff() {
     _asm {
-        mov ah, 01h     // Fonction 01h du BIOS : Définir la taille du curseur
-        mov cx, 1400h   // 00010100 00000000 (curseur invisible)
-        int 10h         // Interruption 10h du BIOS : Fonctions vidéo
+        mov ah, 00h    ; Fonction 00h du BIOS : Changer le mode vidéo
+        mov al, mode   ; Mode (ex: 0x13 pour 320x200x256)
+        int 10h        ; Interruption 10h du BIOS : Fonctions vidéo
     }
 }
 
-/* Fonction pour activer le curseur */
-void cursorOn() {
+/* Désactive le curseur */
+void cursorOff()
+{
     _asm {
-        mov ah, 01h     // Fonction 01h du BIOS : Définir la taille du curseur
-        mov cx, 0607h   // 00000110 00000111 : Taille et forme du curseur
-        int 10h         // Interruption 10h du BIOS : Fonction vidéo
+        mov ah, 01h    ; Fonction 01h du BIOS : Définir la taille du curseur
+        mov cx, 1400h  ; 00010100 00000000 (curseur invisible)
+        int 10h        ; Interruption 10h du BIOS : Fonctions vidéo
+    }
+}
+
+/* Active le curseur */
+void cursorOn()
+{
+    _asm {
+        mov ah, 01h    ; Fonction 01h du BIOS : Définir la taille du curseur
+        mov cx, 0607h  ; 00000110 00000111 : Taille et forme du curseur
+        int 10h        ; Interruption 10h du BIOS : Fonctions vidéo
     }
 }
 
@@ -214,17 +217,15 @@ void freeBackbuffer(void)
 
 /* Copie le backbuffer vers la VRAM (affichage) */
 void flip(void)
-{
-    unsigned char far *src = backbuffer;
-    
+{  
     _asm {
         push ds
         mov ax, VGA_SEG
         mov es, ax
         xor di, di
-        lds si, src
-        mov cx, 32000  // 64000 / 2 (car on copie des mots)
-        rep movsw      // Copie 32000 mots = 64000 octets
+        lds si, backbuffer
+        mov cx, 32000  ; 64000 / 2 (car on copie des mots)
+        rep movsw      ; Copie 32000 mots = 64000 octets
         pop ds
     }
 }
