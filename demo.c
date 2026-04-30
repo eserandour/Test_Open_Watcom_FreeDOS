@@ -3,7 +3,7 @@
    =========================================================
    Open Watcom 1.9 sous FreeDOS 1.4
    Projet DOS 16 bits (mode 13h)
-   Version : 30/04/2026 à 01:05
+   Version : 01/05/2026 à 01:34
    Pour compiler : wcl demo.c -q
 */
 
@@ -24,17 +24,17 @@
    CONSTANTES & CONFIGURATION
    ========================================================= */
    
-// Timer
+/* Timer */
 #define PIT_FREQ 1193180UL  // La fréquence de l'horloge du Programmable Interval Timer (PIT) est de 1 193 180 Hz. C’est la fréquence de base utilisée dans les systèmes DOS pour gérer les temporisations.
 #define TARGET_HZ 70  // La fréquence cible de l'intervalle du timer, ici 70 Hz. Cela signifie que nous voulons que notre timer déclenche une interruption 70 fois par seconde.
 #define DIVISOR (PIT_FREQ / TARGET_HZ)  // Le diviseur nécessaire pour configurer le PIT à 70 Hz.
 
-// Vidéo
+/* Vidéo */
 #define SCREEN_WIDTH  320
 #define SCREEN_HEIGHT 200
 #define BACKBUFFER_SIZE 64000UL  // 320 * 200 (mode 13h, 1 octet/pixel) - UL : Unsigned Long
 #define VGA_SEG 0xA000
-#define OFFSET(x,y) ((y<<8) + (y<<6) + x)  // Equivalent à y * 320 + x (optimisé pour le calcul rapide)
+#define OFFSET(x, y) (((y) << 8) + ((y) << 6) + (x))  // Equivalent à y * 320 + x (optimisé pour le calcul rapide)
 
 /* =========================================================
    STRUCTURES & TYPES
@@ -45,9 +45,9 @@ typedef struct {
 } Color;
 
 typedef enum {
-    SCENE_RANDOM,
-    SCENE_PALETTE,
-    SCENE_END,
+    SCENE_RANDOM,   // Voir sceneRandom
+    SCENE_PALETTE,  // Voir scenePalette
+    SCENE_END,      // Voir sceneEnd
 } Scene;
 
 /* =========================================================
@@ -152,7 +152,7 @@ void pause(unsigned long ms)
     unsigned long ticks_to_wait = (ms * TARGET_HZ) / 1000UL;
     
     while ((unsigned long)(timer_ticks - start) < ticks_to_wait) {
-        /* Attend la fin de la boucle */
+        _asm { nop }  // Ne fais rien. Préférer hlt à nop en contexte réel sous FreeDOS
     }
 }
 
@@ -234,6 +234,13 @@ void flip(void)
    VIDEO PALETTE VGA (256 couleurs)
    ========================================================= */
 
+/* Sert à se synchroniser avec le rafraîchissement vertical de l’écran */
+void waitVRetrace(void)
+{
+    while (inp(0x3DA) & 0x08);   /* Attendre la fin du retrace en cours */
+    while (!(inp(0x3DA) & 0x08)); /* Attendre le début du prochain retrace */
+}
+
 /* Définit une couleur individuelle dans la palette VGA */
 void setPaletteColor(unsigned char index, unsigned char r, unsigned char g, unsigned char b)
 {
@@ -248,6 +255,7 @@ void setPalette(Color *pal)
 {
     int i;
     
+    waitVRetrace();  // Pour éviter le palette tearing
     for (i = 0; i < 256; i++)
         setPaletteColor(i, pal[i].r, pal[i].g, pal[i].b);
 }
@@ -275,15 +283,15 @@ void copyPalette(Color *dest, Color *src)
 }
 
 /* Interpolation linéaire entre deux palettes (palA => palB) */
-void lerpPalette(Color *dest, Color *palA, Color *palB, float t)  // t varie de 0 à 1 (0 => palette A, 1 => palette B)
+void lerpPalette(Color *dest, Color *palA, Color *palB, float t)
 {
     int i;
     
     for (i = 0; i < 256; i++)
     {
-        dest[i].r = (unsigned char)(palA[i].r + t * (palB[i].r - palA[i].r));
-        dest[i].g = (unsigned char)(palA[i].g + t * (palB[i].g - palA[i].g));
-        dest[i].b = (unsigned char)(palA[i].b + t * (palB[i].b - palA[i].b));
+        dest[i].r = (unsigned char)(palA[i].r + t * (int)(palB[i].r - palA[i].r));
+        dest[i].g = (unsigned char)(palA[i].g + t * (int)(palB[i].g - palA[i].g));
+        dest[i].b = (unsigned char)(palA[i].b + t * (int)(palB[i].b - palA[i].b));
     }
 }
 
@@ -291,8 +299,9 @@ void lerpPalette(Color *dest, Color *palA, Color *palB, float t)  // t varie de 
 void fadePalette(Color *pal, float t)
 {
     int i;
-    
     Color tmp;
+    
+    waitVRetrace();
     for (i = 0; i < 256; i++)
     {
         tmp.r = (unsigned char)(pal[i].r * t);
@@ -306,8 +315,8 @@ void fadePalette(Color *pal, float t)
 void cyclePaletteLeft(Color *pal, int start, int end)
 {
     int i;
-
     Color tmp = pal[start];
+    
     for (i = start; i < end; i++)
         pal[i] = pal[i+1];
     pal[end] = tmp;
@@ -318,8 +327,8 @@ void cyclePaletteLeft(Color *pal, int start, int end)
 void cyclePaletteRight(Color *pal, int start, int end)
 {
     int i;
-    
-    Color tmp = pal[end];
+    Color tmp = pal[end]; 
+      
     for (i = end; i > start; i--)
         pal[i] = pal[i-1];
     pal[start] = tmp;
@@ -336,10 +345,11 @@ void generateBlackPalette(Color *pal)
 void generateGrayPalette(Color *pal)
 {
     int i;
+    unsigned char v;
 
     for (i = 0; i < 256; i++)
     {
-        unsigned char v = i >> 2;  // 0–255 => 0–63
+        v = i >> 2;  // 0–255 => 0–63
 
         pal[i].r = v;
         pal[i].g = v;
@@ -351,16 +361,17 @@ void generateGrayPalette(Color *pal)
 void generatePinkPalette(Color *pal)
 {
     int i;
-    
+    unsigned char r, g, b;
+        
     pal[0].r = 0;
     pal[0].g = 0;
     pal[0].b = 0;
     
     for (i = 1; i < 256; i++)
     {
-        unsigned char r = 63;                 // Rouge toujours à max
-        unsigned char g = (i * 63) / 255;     // Interpolation linéaire 0 => 63
-        unsigned char b = (i * 63) / 255;     // Interpolation linéaire 0 => 63
+        r = 63;                 // Rouge toujours à max
+        g = (i * 63) / 255;     // Interpolation linéaire 0 => 63
+        b = (i * 63) / 255;     // Interpolation linéaire 0 => 63
         
         pal[i].r = r;
         pal[i].g = g;
@@ -481,11 +492,10 @@ void drawCircleFill(int xc, int yc, int r, unsigned char color)  // Avec clippin
     int x = 0;
     int y = r;
     int d = 3 - 2 * r;
+    int x_start, x_len;
 
     while (x <= y)
     {
-        int x_start, x_len;
-
         // Ligne horizontale yc - y
         if (yc - y >= 0 && yc - y < SCREEN_HEIGHT) {
             x_start = xc - x;
@@ -543,6 +553,14 @@ void drawCircleFill(int xc, int yc, int r, unsigned char color)  // Avec clippin
    TOOLS / DEBUG
    ========================================================= */
 
+/* Pour sortir proprement du programme */
+void shutdown(void)
+{
+    restoreTimer();      // PIT → 18.2 Hz, ISR BIOS restaurée
+    setVideoMode(0x03);  // Retour au mode texte
+    freeBackbuffer();    // libération de la mémoire
+}
+
 /* Affiche la palette courante sur une grille */
 void drawPaletteGrid(void)
 {
@@ -559,14 +577,15 @@ void drawPaletteGrid(void)
     int offsetY = (SCREEN_HEIGHT - gridH) / 2;
 
     int x, y;
+    int px, py;
     int i = 0;
 
     for (y = 0; y < gridSize; y++)
     {
         for (x = 0; x < gridSize; x++)
         {
-            int px = offsetX + x * (cellSize + spacing);
-            int py = offsetY + y * (cellSize + spacing);
+            px = offsetX + x * (cellSize + spacing);
+            py = offsetY + y * (cellSize + spacing);
 
             drawRectFill(px, py,
                          px + cellSize - 1,
@@ -581,14 +600,16 @@ void drawPaletteGrid(void)
 void drawPaletteGradient(void)
 {
     int x, y;
+    unsigned char color;
+    int offset;
     int startX = (SCREEN_WIDTH - 256) / 2;  // Centrage horizontal
     
     for (x = 0; x < 256; x++)
     {
-        unsigned char color = (unsigned char)x;
+        color = (unsigned char)x;
 
         // Remplissage vertical de chaque colonne
-        int offset = (0 << 8) + (0 << 6) + (startX + x); // offset du premier pixel de la colonne
+        offset = OFFSET(startX + x, 0); // Offset du premier pixel de la colonne
         for (y = 0; y < SCREEN_HEIGHT; y++)
         {
             backbuffer[offset] = color;
@@ -611,79 +632,81 @@ void setScene(Scene s)
 /* SCENE 1 : pixels random */
 void sceneRandom(void)
 {
-    static unsigned long lastRender = 0;
+    static unsigned long lastRender  = 0;
+    static int           initialized = 0;
+    static unsigned long lcg_state   = 0;
+
     unsigned long now = readTimer();
     unsigned long render_interval_ms = 100UL;  // Durée entre 2 frames
-    unsigned long scene_ms = 5000UL; // Durée de la scène
-
-    copyPalette(workingPalette, defaultPalette);
-    setPalette(workingPalette);
-    clearScreen(0);  
+    unsigned long scene_ms           = 5000UL; // Durée de la scène
+    unsigned long i;
+    
+    /* Initialisation au premier appel */
+    if (!initialized) {
+        lastRender = now;
+        lcg_state  = (unsigned long)time(NULL);
+        copyPalette(workingPalette, defaultPalette);
+        setPalette(workingPalette);
+        initialized = 1;
+    }
     
     while (elapsedTimeMs(lastRender, now) >= render_interval_ms)
     {
-        // Logique de la scène /////////////////////////////////////////
-             
-                
-               
-        // Dessin backbuffer ///////////////////////////////////////////
-        
-        unsigned long i;
-
-        for (i = 0; i < 64000UL; i++) {
-            backbuffer[i] = rand() & 255;
+        /* Remplissage LCG */
+        for (i = 0; i < BACKBUFFER_SIZE; i++)
+        {
+            lcg_state = lcg_state * 1664525UL + 1013904223UL;
+            backbuffer[i] = (unsigned char)(lcg_state >> 24);
         }
-        
-        flip();  // Affiche le backbuffer à l'écran
-        
-        ////////////////////////////////////////////////////////////////
-
-        lastRender += (render_interval_ms * TARGET_HZ) / 1000UL;  // Avance lastRender de l'intervalle de frame, ce qui permet de maintenir un rythme stable même si certaines frames prennent plus de temps à dessiner
+        flip();
+        lastRender += (render_interval_ms * TARGET_HZ) / 1000UL;
     }
-
+ 
     if (elapsedTimeMs(sceneStart, now) > scene_ms)
     {
+        initialized = 0;
         setScene(SCENE_PALETTE);
-    }
+	}
 }
 
 /* SCENE 2 : palette */
 void scenePalette(void)
 {
-    static unsigned long lastRender = 0UL;
+    static unsigned long lastRender         = 0UL;
+    static int           phase5_initialized = 0;
+ 
     unsigned long now = readTimer();
-    unsigned long render_interval_ms = 25UL;  // durée entre 2 frames
-
-    // --- Durées des différentes phases (en ms) ---
-    const unsigned long DURATION_FADE_IN         = 3000UL;  // Fade depuis le noir
-    const unsigned long DURATION_STATIC_DEFAULT  = 1000UL;  // Affichage statique defaultPalette
-    const unsigned long DURATION_RIGHT           = 5000UL;  // Cycle vers la droite
-    const unsigned long DURATION_LEFT            = 5000UL;  // Cycle vers la gauche
-    const unsigned long DURATION_FADE_TO_PINK    = 5000UL;  // Fade vers pinkPalette
-
+    unsigned long render_interval_ms = 25UL;
+ 
+    const unsigned long DURATION_FADE_IN        = 3000UL;
+    const unsigned long DURATION_STATIC_DEFAULT = 1000UL;
+    const unsigned long DURATION_RIGHT          = 5000UL;
+    const unsigned long DURATION_LEFT           = 5000UL;
+    const unsigned long DURATION_FADE_TO_PINK   = 3000UL;
+ 
     unsigned long elapsed = elapsedTimeMs(sceneStart, now);
-
+ 
     clearScreen(0);
-
-    // 1) Fade-in depuis le noir vers workingPalette (= defaultPalette)
+ 
+    /* Phase 1 : Fade-in depuis le noir */
     if (elapsed < DURATION_FADE_IN)
     {
-        float t = (float)elapsed / (float)DURATION_FADE_IN; // 0 → 1
+        float t = (float)elapsed / (float)DURATION_FADE_IN;  // 0 → 1
         fadePalette(workingPalette, t);
         drawPaletteGrid();
         flip();
         return;
     }
-
-    // 2) Affichage statique de workingPalette (= defaultPalette)
+ 
+    /* Phase 2 : Affichage statique */
     else if (elapsed < DURATION_FADE_IN + DURATION_STATIC_DEFAULT)
     {
         drawPaletteGrid();
         flip();
         return;
     }
-
-    // 3) Cycle vers la droite
+ 
+    /* Phase 3 : Cycle droite */
     else if (elapsed < DURATION_FADE_IN + DURATION_STATIC_DEFAULT + DURATION_RIGHT)
     {
         if (elapsedTimeMs(lastRender, now) >= render_interval_ms)
@@ -695,8 +718,8 @@ void scenePalette(void)
         }
         return;
     }
-
-    // 4) Cycle vers la gauche
+ 
+    /* Phase 4 : Cycle gauche */
     else if (elapsed < DURATION_FADE_IN + DURATION_STATIC_DEFAULT + DURATION_RIGHT + DURATION_LEFT)
     {
         if (elapsedTimeMs(lastRender, now) >= render_interval_ms)
@@ -708,24 +731,32 @@ void scenePalette(void)
         }
         return;
     }
-
-    // 5) Fade progressif vers pinkPalette
+ 
+    /* Phase 5 : Fade progressif vers pinkPalette */
     else if (elapsed < DURATION_FADE_IN + DURATION_STATIC_DEFAULT + DURATION_RIGHT + DURATION_LEFT + DURATION_FADE_TO_PINK)
     {
         unsigned long fadeElapsed = elapsed - (DURATION_FADE_IN + DURATION_STATIC_DEFAULT + DURATION_RIGHT + DURATION_LEFT);
-        float t = (float)fadeElapsed / (float)DURATION_FADE_TO_PINK; // 0 → 1
-        copyPalette(paletteA, workingPalette);
-        copyPalette(paletteB, pinkPalette);
-        lerpPalette(workingPalette, paletteA, paletteB, t); // Interpolation
+        float t = (float)fadeElapsed / (float)DURATION_FADE_TO_PINK;  // 0 → 1
+ 
+        /* Sauvegarde de la palette de départ une seule fois */
+        if (!phase5_initialized)
+        {
+            copyPalette(paletteA, workingPalette);
+            copyPalette(paletteB, pinkPalette);
+            phase5_initialized = 1;
+        }
+ 
+        lerpPalette(workingPalette, paletteA, paletteB, t);
         setPalette(workingPalette);
         drawPaletteGrid();
         flip();
         return;
     }
-
-    // 6) Fin de la scène
+ 
+    /* Phase 6 : Fin de la scène */
     else
     {
+        phase5_initialized = 0;
         setScene(SCENE_END);
     }
 }
@@ -733,31 +764,31 @@ void scenePalette(void)
 /* SCENE 3 : fin */
 void sceneEnd(void)
 {
-    static unsigned long lastRender = 0;
+    static unsigned long lastRender  = 0;
+    static int           initialized = 0;
     unsigned long now = readTimer();
-    unsigned long render_interval_ms = 100UL;  // Durée entre 2 frames
-    unsigned long scene_ms = 5000UL; // Durée de la scène
-      
+    unsigned long render_interval_ms = 25UL;
+    unsigned long scene_ms           = 3000UL;
+ 
+    if (!initialized)
+    {
+        lastRender  = now;
+        initialized = 1;
+    }
+ 
     while (elapsedTimeMs(lastRender, now) >= render_interval_ms)
     {
-        // Logique de la scène /////////////////////////////////////////
-
-               
-        
-        // Dessin backbuffer ///////////////////////////////////////////
-        
-        clearScreen(0);
+        clearScreen(127);
         flip();
-            
-        ////////////////////////////////////////////////////////////////
-
-        lastRender += (render_interval_ms * TARGET_HZ) / 1000UL;  // Avance lastRender de l'intervalle de frame, ce qui permet de maintenir un rythme stable même si certaines frames prennent plus de temps à dessiner
-        // lastRender = now; // Réinitialise lastRender à l'heure actuelle, utile si on veut simplement attendre "render_interval_ms" depuis la dernière boucle terminée, mais peut faire rater des frames si la boucle est lente
+        lastRender += (render_interval_ms * TARGET_HZ) / 1000UL;
     }
-    
-    getch();  // Attendre une touche
-    
-    setScene(SCENE_RANDOM);
+ 
+    if (elapsedTimeMs(sceneStart, now) > scene_ms)
+    {
+        initialized = 0;
+        shutdown();
+        exit(0);
+	}
 }
 
 /* =========================================================
@@ -767,16 +798,14 @@ void sceneEnd(void)
 typedef void (*SceneFunc)(void);
 SceneFunc scenes[] =  // Tableau de fonctions
 {
-    sceneRandom,
-    scenePalette,
-    sceneEnd,
+    sceneRandom,      // Voir SCENE_RANDOM
+    scenePalette,     // Voir SCENE_PALETTE
+    sceneEnd,         // Voir SCENE_END
 };
 
 int main(void)
-{
-    int i, j;
-    
-    srand(time(0));  // Initialise le générateur de nombres aléatoires avec l'heure actuelle
+{    
+    srand((unsigned int)time(NULL));  // Initialise le générateur de nombres aléatoires   
     if (!initBackbuffer()) return 1;  // Allocation mémoire
     setVideoMode(0x13);  // Passage en mode VGA 13h (320x200x256)
     
@@ -787,11 +816,10 @@ int main(void)
     installTimer();  // Initialisation du timer
     
     setScene(SCENE_RANDOM);
-    while (!kbhit()) scenes[currentScene]();
+    while (!kbhit())  // Sortie par touche clavier
+        scenes[currentScene]();
 
-    restoreTimer();  // Restauration du timer
-    setVideoMode(0x03);  // Retour mode texte
-    freeBackbuffer();  // Libération mémoire
-
+    getch();  // Vide le buffer, sinon le caractère s'affiche dans le terminal
+    shutdown();
     return 0;
 }
