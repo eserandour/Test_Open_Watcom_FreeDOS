@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Font Editor — DOS 8×8</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
+
+  :root {
+    --bg:        #0d0d0f;
+    --panel:     #131316;
+    --border:    #222228;
+    --border2:   #2e2e3a;
+    --on:        #ffffff;
+    --off:       #1a1a22;
+    --hover-on:  #ccccdd;
+    --hover-off: #2a2a38;
+    --sel:       #3d5aff;
+    --sel-light: #6a80ff;
+    --green:     #3ddc84;
+    --green-d:   #1a5c38;
+    --yellow:    #ffd060;
+    --red:       #ff5555;
+    --dim:       #555566;
+    --text:      #ccccdd;
+    --text2:     #888899;
+    --btn:       #1e1e28;
+    --btn-h:     #282838;
+    --mono:      'IBM Plex Mono', monospace;
+    --display:   'Space Mono', monospace;
+    --gap:       3px;
+    --cell:      44px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ─────────────────────────────────────────── */
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  header h1 {
+    font-family: var(--display);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--on);
+    letter-spacing: 0.08em;
+  }
+  header h1 span { color: var(--sel-light); }
+  .header-sub { color: var(--dim); font-size: 11px; }
+
+  /* ── Layout ──────────────────────────────────────────── */
+  .workspace {
+    display: grid;
+    grid-template-columns: 460px 1fr 300px;
+    gap: 0;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .panel {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .panel:last-child { border-right: none; }
+
+  .section-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  /* ── Grille d'edition ────────────────────────────────── */
+  #grid-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .grid-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .char-badge {
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--on);
+    width: 36px;
+    text-align: center;
+  }
+  .char-info { color: var(--dim); font-size: 11px; }
+
+  #col-labels {
+    display: flex;
+    margin-left: 22px;
+    margin-bottom: 3px;
+  }
+  #col-labels span {
+    width: var(--cell);
+    margin-right: var(--gap);
+    text-align: center;
+    font-size: 10px;
+    color: var(--dim);
+  }
+
+  .grid-row { display: flex; align-items: center; margin-bottom: var(--gap); }
+  .row-label {
+    width: 18px;
+    font-size: 10px;
+    color: var(--dim);
+    text-align: right;
+    margin-right: 4px;
+    flex-shrink: 0;
+  }
+
+  .cell {
+    width: var(--cell);
+    height: var(--cell);
+    margin-right: var(--gap);
+    border-radius: 5px;
+    cursor: crosshair;
+    transition: background 0.06s;
+    flex-shrink: 0;
+    background: var(--off);
+  }
+  .cell.on { background: var(--on); }
+  .cell:hover { opacity: 0.85; }
+  .cell.on:hover { background: var(--hover-on); }
+  .cell:not(.on):hover { background: var(--hover-off); }
+
+  /* ── Boutons outils ──────────────────────────────────── */
+  .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btn {
+    background: var(--btn);
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 5px 11px;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--btn-h); border-color: var(--dim); }
+  .btn.danger { border-color: #442222; color: var(--red); }
+  .btn.danger:hover { background: #2a1010; }
+  .btn.primary { background: var(--sel); border-color: var(--sel-light); color: #fff; }
+  .btn.primary:hover { background: var(--sel-light); }
+  .btn.success { border-color: var(--green-d); color: var(--green); }
+  .btn.success:hover { background: #112211; }
+
+  /* ── Selecteur de caracteres ─────────────────────────── */
+  #char-grid {
+    display: grid;
+    grid-template-columns: repeat(16, 1fr);
+    gap: 3px;
+  }
+  .char-cell {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    border-radius: 4px;
+    cursor: pointer;
+    background: #161620;
+    border: 1px solid transparent;
+    transition: all 0.1s;
+    color: var(--dim);
+  }
+  .char-cell:hover { background: #1e1e30; border-color: var(--border2); color: var(--text); }
+  .char-cell.active { background: var(--sel); color: #fff; border-color: var(--sel-light); }
+  .char-cell.has-data { border-color: var(--green-d); color: var(--green); }
+  .char-cell.active.has-data { border-color: var(--sel-light); }
+
+  /* ── Bytes display ───────────────────────────────────── */
+  .byte-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .byte-row:last-child { border-bottom: none; }
+  .byte-idx { color: var(--dim); width: 18px; font-size: 11px; }
+  .byte-hex {
+    color: var(--yellow);
+    font-size: 12px;
+    width: 38px;
+    font-weight: 600;
+  }
+  .byte-bits {
+    display: flex;
+    gap: 2px;
+  }
+  .bit {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    background: var(--off);
+    border: 1px solid var(--border2);
+  }
+  .bit.on { background: var(--on); border-color: var(--on); }
+
+  /* ── Apercu ──────────────────────────────────────────── */
+  #preview-wrap {
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+  }
+  .preview-item { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+  .preview-item canvas {
+    image-rendering: pixelated;
+    background: #000;
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+  }
+  .preview-item span { font-size: 10px; color: var(--dim); }
+
+  /* ── Apercu chaine ───────────────────────────────────── */
+  #string-preview-wrap {
+    background: #000;
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    padding: 12px;
+  }
+  #string-preview {
+    image-rendering: pixelated;
+    display: block;
+  }
+  #preview-input {
+    background: var(--btn);
+    border: 1px solid var(--border2);
+    border-radius: 5px;
+    color: var(--on);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 5px 10px;
+    width: 100%;
+    margin-top: 8px;
+    outline: none;
+  }
+  #preview-input:focus { border-color: var(--sel); }
+
+  /* ── Code C ──────────────────────────────────────────── */
+  #code-output {
+    background: #080810;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 11px;
+    line-height: 1.7;
+    overflow-x: auto;
+    white-space: pre;
+    max-height: 300px;
+    overflow-y: auto;
+    color: #a0a0c0;
+    flex: 1;
+  }
+  .code-kw  { color: #569cd6; }
+  .code-fn  { color: #dcdcaa; }
+  .code-num { color: #b5cea8; }
+  .code-str { color: #ce9178; }
+  .code-cm  { color: #6a9955; }
+
+  /* ── Status bar ──────────────────────────────────────── */
+  #status {
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    padding: 6px 20px;
+    font-size: 11px;
+    color: var(--dim);
+    display: flex;
+    justify-content: space-between;
+  }
+  #status-msg { color: var(--green); }
+
+  /* ── Import/export area ──────────────────────────────── */
+  #json-io {
+    background: #080810;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 10px;
+    font-family: var(--mono);
+    color: var(--dim);
+    resize: vertical;
+    width: 100%;
+    height: 80px;
+    outline: none;
+  }
+  #json-io:focus { border-color: var(--sel); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>FONT EDITOR <span>//</span> DOS 8×8</h1>
+  <div class="header-sub">Éditeur de police bitmap pour Open Watcom / FreeDOS</div>
+</header>
+
+<div class="workspace">
+
+  <!-- ══ PANNEAU GAUCHE : éditeur ═════════════════════════ -->
+  <div class="panel">
+
+    <!-- Grille 8x8 -->
+    <div id="grid-wrap">
+      <div class="grid-header">
+        <div class="char-badge" id="char-badge">A</div>
+        <div>
+          <div style="color:var(--on);font-weight:600" id="char-name">Majuscule 'A'</div>
+          <div class="char-info" id="char-code">ASCII 0x41 — index 65</div>
+        </div>
+      </div>
+
+      <div id="col-labels"></div>
+      <div id="grid"></div>
+    </div>
+
+    <!-- Outils de transformation -->
+    <div>
+      <div class="section-label">Transformations</div>
+      <div class="btn-row">
+        <button class="btn" onclick="shiftUp()">↑ Haut</button>
+        <button class="btn" onclick="shiftDown()">↓ Bas</button>
+        <button class="btn" onclick="shiftLeft()">← Gauche</button>
+        <button class="btn" onclick="shiftRight()">→ Droite</button>
+        <button class="btn" onclick="flipH()">⇔ Miroir H</button>
+        <button class="btn" onclick="flipV()">⇕ Miroir V</button>
+        <button class="btn" onclick="invert()">⊕ Inverser</button>
+        <button class="btn danger" onclick="clearGlyph()">✕ Effacer</button>
+      </div>
+    </div>
+
+    <!-- Sélecteur de caractères -->
+    <div>
+      <div class="section-label">Caractères — vert = défini · bleu = actif</div>
+      <div id="char-grid"></div>
+    </div>
+
+  </div>
+
+  <!-- ══ PANNEAU CENTRE : aperçu + bytes ══════════════════ -->
+  <div class="panel">
+
+    <!-- Aperçu multi-échelle -->
+    <div>
+      <div class="section-label">Aperçu glyphe</div>
+      <div id="preview-wrap">
+        <div class="preview-item">
+          <canvas id="prev1" width="8"  height="8"  style="width:16px;height:16px"></canvas>
+          <span>×1</span>
+        </div>
+        <div class="preview-item">
+          <canvas id="prev2" width="16" height="16" style="width:32px;height:32px"></canvas>
+          <span>×2</span>
+        </div>
+        <div class="preview-item">
+          <canvas id="prev3" width="24" height="24" style="width:48px;height:48px"></canvas>
+          <span>×3</span>
+        </div>
+        <div class="preview-item">
+          <canvas id="prev4" width="32" height="32" style="width:64px;height:64px"></canvas>
+          <span>×4</span>
+        </div>
+        <div class="preview-item">
+          <canvas id="prev6" width="48" height="48" style="width:96px;height:96px"></canvas>
+          <span>×6</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Aperçu chaîne -->
+    <div>
+      <div class="section-label">Aperçu chaîne</div>
+      <div id="string-preview-wrap">
+        <canvas id="string-preview" height="16"></canvas>
+        <input id="preview-input" type="text" value="ABCDEFGHIJKLMNOP"
+               placeholder="Tapez du texte..."
+               oninput="updateStringPreview()">
+      </div>
+    </div>
+
+    <!-- Aperçu chaîne ×2 -->
+    <div>
+      <div class="section-label">Aperçu ×2</div>
+      <div id="string-preview-wrap2" style="background:#000;border:1px solid var(--border2);border-radius:6px;padding:12px">
+        <canvas id="string-preview2" height="32"></canvas>
+      </div>
+    </div>
+
+    <!-- Bytes -->
+    <div>
+      <div class="section-label">Octets (ligne par ligne)</div>
+      <div id="bytes-display"></div>
+    </div>
+
+    <!-- Entrée manuelle hex -->
+    <div>
+      <div class="section-label">Saisie hexadécimale directe</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <input id="hex-input" placeholder="78 6C 66 66 66 6C 78 00"
+          style="background:var(--btn);border:1px solid var(--border2);border-radius:5px;color:var(--on);font-family:var(--mono);font-size:12px;padding:5px 10px;flex:1;outline:none"
+          onkeydown="if(event.key==='Enter')applyHex()">
+        <button class="btn primary" onclick="applyHex()">Appliquer</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══ PANNEAU DROIT : export / import ══════════════════ -->
+  <div class="panel">
+
+    <!-- Export C -->
+    <div style="display:flex;flex-direction:column;gap:10px;flex:1">
+      <div class="section-label">Code C généré</div>
+      <div class="btn-row">
+        <button class="btn success" onclick="exportC()">📋 Copier tout</button>
+        <button class="btn" onclick="exportGlyph()">📋 Glyphe actif</button>
+        <button class="btn" onclick="exportDefined()">📋 Définis seulement</button>
+      </div>
+      <div id="code-output"></div>
+    </div>
+
+    <!-- Sauvegarde JSON -->
+    <div>
+      <div class="section-label">Sauvegarde / Chargement JSON</div>
+      <div class="btn-row" style="margin-bottom:8px">
+        <button class="btn success" onclick="saveJSON()">💾 Exporter JSON</button>
+        <button class="btn" onclick="document.getElementById('file-input').click()">📂 Charger JSON</button>
+        <input id="file-input" type="file" accept=".json,.fnt" style="display:none" onchange="loadJSON(event)">
+      </div>
+      <textarea id="json-io" placeholder="JSON de la police (coller ici pour importer)..."></textarea>
+      <button class="btn" style="margin-top:6px;width:100%" onclick="importFromTextarea()">Importer depuis la zone ci-dessus</button>
+    </div>
+
+    <!-- Raccourcis -->
+    <div>
+      <div class="section-label">Raccourcis clavier</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;color:var(--text2)">
+        <tr><td style="padding:3px 0;color:var(--yellow)">←↑↓→</td><td>Changer de caractère</td></tr>
+        <tr><td style="color:var(--yellow)">W A S D</td><td>Décaler le glyphe</td></tr>
+        <tr><td style="color:var(--yellow)">H</td><td>Miroir horizontal</td></tr>
+        <tr><td style="color:var(--yellow)">V</td><td>Miroir vertical</td></tr>
+        <tr><td style="color:var(--yellow)">I</td><td>Inverser</td></tr>
+        <tr><td style="color:var(--yellow)">Del</td><td>Effacer le glyphe</td></tr>
+        <tr><td style="color:var(--yellow)">Ctrl+C</td><td>Copier le code C</td></tr>
+      </table>
+    </div>
+
+    <!-- Statistiques -->
+    <div>
+      <div class="section-label">Statistiques</div>
+      <div id="stats" style="font-size:11px;color:var(--text2);line-height:1.8"></div>
+    </div>
+
+  </div>
+</div>
+
+<div id="status">
+  <span id="status-msg">Prêt.</span>
+  <span id="status-right">Font Editor — DOS 8×8 // mode 13h</span>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// ÉTAT GLOBAL
+// ═══════════════════════════════════════════════════════════
+
+const CHARS = Array.from({length: 95}, (_, i) => String.fromCharCode(i + 32));
+
+// Police par défaut
+const DEFAULT_FONT = {
+  ' ':[0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00],
+  '!':[0x18,0x18,0x18,0x18,0x18,0x00,0x18,0x00],
+  '"':[0x66,0x66,0x24,0x00,0x00,0x00,0x00,0x00],
+  '#':[0x36,0x36,0x7F,0x36,0x7F,0x36,0x36,0x00],
+  '$':[0x0C,0x3E,0x6C,0x3C,0x1E,0x7C,0x18,0x00],
+  '%':[0x62,0x66,0x0C,0x18,0x30,0x66,0x46,0x00],
+  '&':[0x38,0x6C,0x6C,0x38,0x6D,0x66,0x3B,0x00],
+  "'":[0x18,0x18,0x30,0x00,0x00,0x00,0x00,0x00],
+  '(':[0x0C,0x18,0x30,0x30,0x30,0x18,0x0C,0x00],
+  ')':[0x30,0x18,0x0C,0x0C,0x0C,0x18,0x30,0x00],
+  '*':[0x00,0x66,0x3C,0xFF,0x3C,0x66,0x00,0x00],
+  '+':[0x00,0x18,0x18,0x7E,0x18,0x18,0x00,0x00],
+  ',':[0x00,0x00,0x00,0x00,0x00,0x18,0x18,0x30],
+  '-':[0x00,0x00,0x00,0x7E,0x00,0x00,0x00,0x00],
+  '.':[0x00,0x00,0x00,0x00,0x00,0x18,0x18,0x00],
+  '/':[0x02,0x06,0x0C,0x18,0x30,0x60,0x40,0x00],
+  '0':[0x3C,0x66,0x6E,0x76,0x66,0x66,0x3C,0x00],
+  '1':[0x18,0x38,0x18,0x18,0x18,0x18,0x7E,0x00],
+  '2':[0x3C,0x66,0x06,0x0C,0x18,0x30,0x7E,0x00],
+  '3':[0x3C,0x66,0x06,0x1C,0x06,0x66,0x3C,0x00],
+  '4':[0x06,0x0E,0x1E,0x66,0x7F,0x06,0x06,0x00],
+  '5':[0x7E,0x60,0x7C,0x06,0x06,0x66,0x3C,0x00],
+  '6':[0x1C,0x30,0x60,0x7C,0x66,0x66,0x3C,0x00],
+  '7':[0x7E,0x06,0x0C,0x18,0x30,0x30,0x30,0x00],
+  '8':[0x3C,0x66,0x66,0x3C,0x66,0x66,0x3C,0x00],
+  '9':[0x3C,0x66,0x66,0x3E,0x06,0x0C,0x38,0x00],
+  ':':[0x00,0x18,0x18,0x00,0x18,0x18,0x00,0x00],
+  ';':[0x00,0x18,0x18,0x00,0x18,0x18,0x30,0x00],
+  '<':[0x06,0x0C,0x18,0x30,0x18,0x0C,0x06,0x00],
+  '=':[0x00,0x00,0x7E,0x00,0x7E,0x00,0x00,0x00],
+  '>':[0x60,0x30,0x18,0x0C,0x18,0x30,0x60,0x00],
+  '?':[0x3C,0x66,0x06,0x0C,0x18,0x00,0x18,0x00],
+  '@':[0x3C,0x66,0x6E,0x6A,0x6E,0x60,0x3C,0x00],
+  'A':[0x18,0x3C,0x66,0x7E,0x66,0x66,0x66,0x00],
+  'B':[0x7C,0x66,0x66,0x7C,0x66,0x66,0x7C,0x00],
+  'C':[0x3C,0x66,0x60,0x60,0x60,0x66,0x3C,0x00],
+  'D':[0x78,0x6C,0x66,0x66,0x66,0x6C,0x78,0x00],
+  'E':[0x7E,0x60,0x60,0x7C,0x60,0x60,0x7E,0x00],
+  'F':[0x7E,0x60,0x60,0x7C,0x60,0x60,0x60,0x00],
+  'G':[0x3C,0x66,0x60,0x6E,0x66,0x66,0x3C,0x00],
+  'H':[0x66,0x66,0x66,0x7E,0x66,0x66,0x66,0x00],
+  'I':[0x3C,0x18,0x18,0x18,0x18,0x18,0x3C,0x00],
+  'J':[0x1E,0x06,0x06,0x06,0x06,0x66,0x3C,0x00],
+  'K':[0x66,0x6C,0x78,0x70,0x78,0x6C,0x66,0x00],
+  'L':[0x60,0x60,0x60,0x60,0x60,0x60,0x7E,0x00],
+  'M':[0x63,0x77,0x7F,0x6B,0x63,0x63,0x63,0x00],
+  'N':[0x66,0x76,0x7E,0x7E,0x6E,0x66,0x66,0x00],
+  'O':[0x3C,0x66,0x66,0x66,0x66,0x66,0x3C,0x00],
+  'P':[0x7C,0x66,0x66,0x7C,0x60,0x60,0x60,0x00],
+  'Q':[0x3C,0x66,0x66,0x66,0x6A,0x6C,0x36,0x00],
+  'R':[0x7C,0x66,0x66,0x7C,0x6C,0x66,0x66,0x00],
+  'S':[0x3C,0x66,0x60,0x3C,0x06,0x66,0x3C,0x00],
+  'T':[0x7E,0x18,0x18,0x18,0x18,0x18,0x18,0x00],
+  'U':[0x66,0x66,0x66,0x66,0x66,0x66,0x3C,0x00],
+  'V':[0x66,0x66,0x66,0x66,0x3C,0x3C,0x18,0x00],
+  'W':[0x63,0x63,0x63,0x6B,0x7F,0x77,0x63,0x00],
+  'X':[0x66,0x66,0x3C,0x18,0x3C,0x66,0x66,0x00],
+  'Y':[0x66,0x66,0x66,0x3C,0x18,0x18,0x18,0x00],
+  'Z':[0x7E,0x06,0x0C,0x18,0x30,0x60,0x7E,0x00],
+  '[':[0x3C,0x30,0x30,0x30,0x30,0x30,0x3C,0x00],
+  '\\':[0x40,0x60,0x30,0x18,0x0C,0x06,0x02,0x00],
+  ']':[0x3C,0x0C,0x0C,0x0C,0x0C,0x0C,0x3C,0x00],
+  '^':[0x18,0x3C,0x66,0x00,0x00,0x00,0x00,0x00],
+  '_':[0x00,0x00,0x00,0x00,0x00,0x00,0x7E,0x00],
+  '`':[0x18,0x18,0x0C,0x00,0x00,0x00,0x00,0x00],
+  'a':[0x00,0x00,0x3C,0x06,0x3E,0x66,0x3E,0x00],
+  'b':[0x60,0x60,0x7C,0x66,0x66,0x66,0x7C,0x00],
+  'c':[0x00,0x00,0x3C,0x60,0x60,0x60,0x3C,0x00],
+  'd':[0x06,0x06,0x3E,0x66,0x66,0x66,0x3E,0x00],
+  'e':[0x00,0x00,0x3C,0x66,0x7E,0x60,0x3C,0x00],
+  'f':[0x1C,0x30,0x30,0x7C,0x30,0x30,0x30,0x00],
+  'g':[0x00,0x00,0x3E,0x66,0x66,0x3E,0x06,0x3C],
+  'h':[0x60,0x60,0x7C,0x66,0x66,0x66,0x66,0x00],
+  'i':[0x18,0x00,0x38,0x18,0x18,0x18,0x3C,0x00],
+  'j':[0x06,0x00,0x0E,0x06,0x06,0x06,0x66,0x3C],
+  'k':[0x60,0x60,0x66,0x6C,0x78,0x6C,0x66,0x00],
+  'l':[0x38,0x18,0x18,0x18,0x18,0x18,0x3C,0x00],
+  'm':[0x00,0x00,0x66,0x7F,0x7F,0x6B,0x63,0x00],
+  'n':[0x00,0x00,0x7C,0x66,0x66,0x66,0x66,0x00],
+  'o':[0x00,0x00,0x3C,0x66,0x66,0x66,0x3C,0x00],
+  'p':[0x00,0x00,0x7C,0x66,0x66,0x7C,0x60,0x60],
+  'q':[0x00,0x00,0x3E,0x66,0x66,0x3E,0x06,0x06],
+  'r':[0x00,0x00,0x6C,0x76,0x60,0x60,0x60,0x00],
+  's':[0x00,0x00,0x3C,0x60,0x3C,0x06,0x7C,0x00],
+  't':[0x30,0x30,0x7C,0x30,0x30,0x30,0x1C,0x00],
+  'u':[0x00,0x00,0x66,0x66,0x66,0x66,0x3E,0x00],
+  'v':[0x00,0x00,0x66,0x66,0x66,0x3C,0x18,0x00],
+  'w':[0x00,0x00,0x63,0x6B,0x7F,0x3E,0x36,0x00],
+  'x':[0x00,0x00,0x66,0x3C,0x18,0x3C,0x66,0x00],
+  'y':[0x00,0x00,0x66,0x66,0x3E,0x06,0x3C,0x00],
+  'z':[0x00,0x00,0x7E,0x0C,0x18,0x30,0x7E,0x00],
+  '{':[0x0E,0x18,0x18,0x70,0x18,0x18,0x0E,0x00],
+  '|':[0x18,0x18,0x18,0x00,0x18,0x18,0x18,0x00],
+  '}':[0x70,0x18,0x18,0x0E,0x18,0x18,0x70,0x00],
+  '~':[0x00,0x76,0xDC,0x00,0x00,0x00,0x00,0x00],
+};
+
+// État
+const font = {};
+for (const c of CHARS) {
+  font[c] = DEFAULT_FONT[c] ? [...DEFAULT_FONT[c]] : new Array(8).fill(0);
+}
+let current = 'A';
+let isDrawing = false;
+let drawVal = null;
+
+// ═══════════════════════════════════════════════════════════
+// CONSTRUCTION DE L'UI
+// ═══════════════════════════════════════════════════════════
+
+function buildColLabels() {
+  const wrap = document.getElementById('col-labels');
+  for (let i = 0; i < 8; i++) {
+    const s = document.createElement('span');
+    s.textContent = i;
+    wrap.appendChild(s);
+  }
+}
+
+function buildGrid() {
+  const gridEl = document.getElementById('grid');
+  gridEl.innerHTML = '';
+
+  for (let row = 0; row < 8; row++) {
+    const rowDiv = document.createElement('div');
+    rowDiv.className = 'grid-row';
+
+    const lbl = document.createElement('div');
+    lbl.className = 'row-label';
+    lbl.textContent = row;
+    rowDiv.appendChild(lbl);
+
+    for (let col = 0; col < 8; col++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.row = row;
+      cell.dataset.col = col;
+
+      cell.addEventListener('mousedown', e => {
+        e.preventDefault();
+        const bit = getPixel(row, col);
+        drawVal = !bit;
+        setPixel(row, col, drawVal);
+        isDrawing = true;
+        updateAll();
+      });
+
+      cell.addEventListener('mouseenter', () => {
+        if (isDrawing) {
+          setPixel(row, col, drawVal);
+          updateAll();
+        }
+      });
+
+      rowDiv.appendChild(cell);
+    }
+    gridEl.appendChild(rowDiv);
+  }
+}
+
+function buildCharGrid() {
+  const gridEl = document.getElementById('char-grid');
+  gridEl.innerHTML = '';
+  for (const c of CHARS) {
+    const cell = document.createElement('div');
+    cell.className = 'char-cell';
+    cell.textContent = c === ' ' ? '·' : c;
+    cell.title = `'${c}' (0x${c.charCodeAt(0).toString(16).toUpperCase().padStart(2,'0')})`;
+    cell.dataset.char = c;
+    cell.addEventListener('click', () => selectChar(c));
+    gridEl.appendChild(cell);
+  }
+}
+
+document.addEventListener('mouseup', () => { isDrawing = false; });
+
+// ═══════════════════════════════════════════════════════════
+// OPÉRATIONS SUR LES GLYPHES
+// ═══════════════════════════════════════════════════════════
+
+function getPixel(row, col) {
+  return !!(font[current][row] & (1 << (7 - col)));
+}
+
+function setPixel(row, col, val) {
+  if (val) font[current][row] |= (1 << (7 - col));
+  else      font[current][row] &= ~(1 << (7 - col));
+}
+
+function hasData(c) {
+  return font[c].some(b => b !== 0);
+}
+
+function selectChar(c) {
+  current = c;
+  updateAll();
+}
+
+function shiftUp()    { font[current] = [...font[current].slice(1), font[current][0]]; updateAll(); }
+function shiftDown()  { font[current] = [font[current][7], ...font[current].slice(0,7)]; updateAll(); }
+function shiftLeft()  { font[current] = font[current].map(b => ((b<<1)|(b>>7))&0xFF); updateAll(); }
+function shiftRight() { font[current] = font[current].map(b => ((b>>1)|(b<<7))&0xFF); updateAll(); }
+function flipH() {
+  font[current] = font[current].map(b => {
+    let r = 0;
+    for (let i = 0; i < 8; i++) if (b & (1<<i)) r |= (1<<(7-i));
+    return r;
+  });
+  updateAll();
+}
+function flipV()   { font[current] = [...font[current]].reverse(); updateAll(); }
+function invert()  { font[current] = font[current].map(b => (~b) & 0xFF); updateAll(); }
+function clearGlyph() { font[current] = new Array(8).fill(0); updateAll(); }
+
+// ═══════════════════════════════════════════════════════════
+// MISE À JOUR DE L'UI
+// ═══════════════════════════════════════════════════════════
+
+function updateAll() {
+  updateGridDisplay();
+  updateCharInfo();
+  updateCharGrid();
+  updatePreviews();
+  updateBytesDisplay();
+  updateStringPreview();
+  updateCodeOutput();
+  updateStats();
+}
+
+function updateGridDisplay() {
+  const cells = document.querySelectorAll('.cell');
+  cells.forEach(cell => {
+    const row = +cell.dataset.row;
+    const col = +cell.dataset.col;
+    cell.classList.toggle('on', getPixel(row, col));
+  });
+}
+
+function updateCharInfo() {
+  const code = current.charCodeAt(0);
+  document.getElementById('char-badge').textContent = current === ' ' ? '·' : current;
+  document.getElementById('char-name').textContent  = getCharName(current);
+  document.getElementById('char-code').textContent  =
+    `ASCII 0x${code.toString(16).toUpperCase().padStart(2,'0')} — index ${code}`;
+}
+
+function getCharName(c) {
+  const code = c.charCodeAt(0);
+  if (c === ' ') return 'Espace';
+  if (code >= 65 && code <= 90)  return `Majuscule '${c}'`;
+  if (code >= 97 && code <= 122) return `Minuscule '${c}'`;
+  if (code >= 48 && code <= 57)  return `Chiffre '${c}'`;
+  return `Symbole '${c}'`;
+}
+
+function updateCharGrid() {
+  document.querySelectorAll('.char-cell').forEach(cell => {
+    const c = cell.dataset.char;
+    cell.className = 'char-cell';
+    if (c === current)  cell.classList.add('active');
+    if (hasData(c))     cell.classList.add('has-data');
+  });
+}
+
+function drawGlyphToCanvas(canvas, glyph, scale) {
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#fff';
+  for (let r = 0; r < 8; r++)
+    for (let c = 0; c < 8; c++)
+      if (glyph[r] & (1 << (7-c)))
+        ctx.fillRect(c*scale, r*scale, scale, scale);
+}
+
+function updatePreviews() {
+  const g = font[current];
+  drawGlyphToCanvas(document.getElementById('prev1'), g, 1);
+  drawGlyphToCanvas(document.getElementById('prev2'), g, 2);
+  drawGlyphToCanvas(document.getElementById('prev3'), g, 3);
+  drawGlyphToCanvas(document.getElementById('prev4'), g, 4);
+  drawGlyphToCanvas(document.getElementById('prev6'), g, 6);
+}
+
+function updateBytesDisplay() {
+  const g = font[current];
+  const wrap = document.getElementById('bytes-display');
+  wrap.innerHTML = '';
+  g.forEach((b, i) => {
+    const row = document.createElement('div');
+    row.className = 'byte-row';
+
+    const idx  = document.createElement('div'); idx.className = 'byte-idx'; idx.textContent = i;
+    const hex  = document.createElement('div'); hex.className = 'byte-hex';
+    hex.textContent = '0x' + b.toString(16).toUpperCase().padStart(2,'0');
+
+    const bits = document.createElement('div'); bits.className = 'byte-bits';
+    for (let bit = 7; bit >= 0; bit--) {
+      const d = document.createElement('div');
+      d.className = 'bit' + (b & (1<<bit) ? ' on' : '');
+      bits.appendChild(d);
+    }
+
+    row.appendChild(idx); row.appendChild(hex); row.appendChild(bits);
+    wrap.appendChild(row);
+  });
+}
+
+function updateStringPreview() {
+  const str = document.getElementById('preview-input').value || 'DEMO';
+  renderStringToCanvas(document.getElementById('string-preview'), str, 1);
+  renderStringToCanvas(document.getElementById('string-preview2'), str, 2);
+}
+
+function renderStringToCanvas(canvas, str, scale) {
+  const w = Math.max(str.length * 8 * scale, 8);
+  canvas.width  = w;
+  canvas.height = 8 * scale;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w, 8 * scale);
+  ctx.fillStyle = '#fff';
+  for (let ci = 0; ci < str.length; ci++) {
+    const c = str[ci];
+    const g = font[c] || new Array(8).fill(0);
+    for (let r = 0; r < 8; r++)
+      for (let col = 0; col < 8; col++)
+        if (g[r] & (1 << (7-col)))
+          ctx.fillRect(ci*8*scale + col*scale, r*scale, scale, scale);
+  }
+}
+
+function updateCodeOutput() {
+  const out = document.getElementById('code-output');
+  out.innerHTML = generateCodeHTML(CHARS.filter(c => hasData(c)));
+}
+
+function generateCode(chars, header=true) {
+  const lines = [];
+  if (header) {
+    lines.push('/* Police custom — Font Editor DOS 8x8 */');
+    lines.push('void initCustomFont(void)');
+    lines.push('{');
+  }
+  for (const c of chars) {
+    const g = font[c];
+    let cs;
+    if (c === "'") cs = "'\\''";
+    else if (c === '\\') cs = "'\\\\'";
+    else cs = `'${c}'`;
+    const bytes = g.map(b => '0x'+b.toString(16).toUpperCase().padStart(2,'0')).join(',');
+    lines.push(`    defineFontChar(${cs}, ${bytes});`);
+  }
+  if (header) lines.push('}');
+  return lines.join('\n');
+}
+
+function generateCodeHTML(chars) {
+  const code = generateCode(chars);
+  return code
+    .replace(/\/\*.*?\*\//g, m => `<span class="code-cm">${m}</span>`)
+    .replace(/\b(void|return|static)\b/g, m => `<span class="code-kw">${m}</span>`)
+    .replace(/\b(initCustomFont|defineFontChar)\b/g, m => `<span class="code-fn">${m}</span>`)
+    .replace(/0x[0-9A-Fa-f]+/g, m => `<span class="code-num">${m}</span>`)
+    .replace(/'(\\.|[^'])'/g, m => `<span class="code-str">${m}</span>`);
+}
+
+function updateStats() {
+  const defined = CHARS.filter(c => hasData(c)).length;
+  const total   = CHARS.length;
+  const bits    = Object.values(font).flat().reduce((s,b) => s + b.toString(2).split('1').length-1, 0);
+  document.getElementById('stats').innerHTML =
+    `Glyphes définis : <strong style="color:var(--green)">${defined}</strong> / ${total}<br>
+     Glyphes vides   : <strong>${total - defined}</strong><br>
+     Pixels allumés  : <strong style="color:var(--yellow)">${bits}</strong> au total<br>
+     Taille C estimée: ~${defined * 60} octets`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// EXPORT / IMPORT
+// ═══════════════════════════════════════════════════════════
+
+function setStatus(msg, color='var(--green)') {
+  const el = document.getElementById('status-msg');
+  el.textContent = msg;
+  el.style.color = color;
+  setTimeout(() => { el.textContent = 'Prêt.'; el.style.color = 'var(--dim)'; }, 3000);
+}
+
+function exportC() {
+  const code = generateCode(CHARS.filter(c => hasData(c)));
+  navigator.clipboard.writeText(code).then(() => setStatus('✓ Code C copié dans le presse-papiers !'));
+}
+
+function exportGlyph() {
+  const code = generateCode([current], false).trim();
+  navigator.clipboard.writeText(code).then(() => setStatus(`✓ Glyphe '${current}' copié !`));
+}
+
+function exportDefined() {
+  const defined = CHARS.filter(c => hasData(c));
+  const code = generateCode(defined);
+  navigator.clipboard.writeText(code).then(() =>
+    setStatus(`✓ ${defined.length} glyphes définis copiés !`));
+}
+
+function saveJSON() {
+  const data = {};
+  for (const c of CHARS) data[c] = font[c];
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'mafont.fnt';
+  a.click();
+  setStatus('✓ Sauvegardé : mafont.fnt');
+}
+
+function loadJSON(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      for (const c of CHARS)
+        if (data[c]) font[c] = data[c].slice(0,8);
+      updateAll();
+      setStatus(`✓ Chargé : ${file.name}`);
+    } catch(err) {
+      setStatus('✗ Erreur de lecture JSON', 'var(--red)');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function importFromTextarea() {
+  try {
+    const data = JSON.parse(document.getElementById('json-io').value);
+    for (const c of CHARS)
+      if (data[c]) font[c] = data[c].slice(0,8);
+    updateAll();
+    setStatus('✓ Police importée depuis la zone texte');
+  } catch(e) {
+    setStatus('✗ JSON invalide', 'var(--red)');
+  }
+}
+
+function applyHex() {
+  const raw = document.getElementById('hex-input').value.trim();
+  const parts = raw.split(/[\s,]+/).filter(Boolean);
+  if (parts.length !== 8) {
+    setStatus('✗ Entrez exactement 8 valeurs hex (ex: 3C 66 66 7E 66 66 66 00)', 'var(--red)');
+    return;
+  }
+  const bytes = parts.map(p => parseInt(p, 16));
+  if (bytes.some(isNaN)) {
+    setStatus('✗ Valeurs hexadécimales invalides', 'var(--red)');
+    return;
+  }
+  font[current] = bytes;
+  updateAll();
+  setStatus(`✓ Glyphe '${current}' mis à jour`);
+}
+
+// ═══════════════════════════════════════════════════════════
+// RACCOURCIS CLAVIER
+// ═══════════════════════════════════════════════════════════
+
+document.addEventListener('keydown', e => {
+  // Ignorer si on tape dans un input
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+  const idx = CHARS.indexOf(current);
+
+  if (e.key === 'ArrowRight' && idx < CHARS.length-1) { selectChar(CHARS[idx+1]); return; }
+  if (e.key === 'ArrowLeft'  && idx > 0)              { selectChar(CHARS[idx-1]); return; }
+  if (e.key === 'ArrowDown'  && idx+16 < CHARS.length){ selectChar(CHARS[idx+16]); return; }
+  if (e.key === 'ArrowUp'    && idx-16 >= 0)          { selectChar(CHARS[idx-16]); return; }
+
+  if (e.key === 'w' || e.key === 'W') { shiftUp();    return; }
+  if (e.key === 's' || e.key === 'S') { shiftDown();  return; }
+  if (e.key === 'a' || e.key === 'A') { shiftLeft();  return; }
+  if (e.key === 'd' || e.key === 'D') { shiftRight(); return; }
+  if (e.key === 'h' || e.key === 'H') { flipH();      return; }
+  if (e.key === 'v' || e.key === 'V') { flipV();      return; }
+  if (e.key === 'i' || e.key === 'I') { invert();     return; }
+  if (e.key === 'Delete' || e.key === 'Backspace') { clearGlyph(); return; }
+
+  if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+    e.preventDefault();
+    exportGlyph();
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+
+buildColLabels();
+buildGrid();
+buildCharGrid();
+updateAll();
+</script>
+</body>
+</html>
+
