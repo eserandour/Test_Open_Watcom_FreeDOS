@@ -3,7 +3,7 @@
    =========================================================
    Open Watcom 1.9 sous FreeDOS 1.4
    Projet DOS 16 bits (mode 13h)
-   Version : 01/05/2026 à 02:34
+   Version : 01/05/2026 à 04:34
    Pour compiler : wcl demo.c -q
 */
 
@@ -256,7 +256,6 @@ void setPalette(Color *pal)
     int i;
     
     waitVRetrace();  // Pour éviter le palette tearing
-    
     outp(0x3C8, 0);  // Index initial
     for (i = 0; i < 256; i++)
     {
@@ -352,7 +351,6 @@ void generateGrayPalette(Color *pal)
     for (i = 0; i < 256; i++)
     {
         v = i >> 2;  // 0–255 => 0–63
-
         pal[i].r = v;
         pal[i].g = v;
         pal[i].b = v;
@@ -437,6 +435,108 @@ void drawRectFill(int x1, int y1, int x2, int y2, unsigned char color)
     for (y = y1; y <= y2; y++) {
         offset = OFFSET(x1,y);  // y * 320 + x1
         _fmemset(backbuffer + offset, color, x2 - x1 + 1);
+    }
+}
+
+/* Dessine un Polygone */
+/* pts : tableau de [x0,y0, x1,y1, ..., xn,yn] */
+/* n   : nombre de sommets */
+void drawPolygon(int *pts, int n, unsigned char color)
+{
+    int i;
+
+    if (n < 2) return;
+
+    for (i = 0; i < n - 1; i++)
+        drawLine(pts[i*2], pts[i*2+1],
+                 pts[i*2+2], pts[i*2+3], color);
+
+    /* Fermeture : dernier sommet => premier sommet */
+    drawLine(pts[(n-1)*2], pts[(n-1)*2+1],
+             pts[0],       pts[1], color);
+}
+
+/* Dessine un Polygone plein */
+/* pts : tableau de [x0,y0, x1,y1, ..., xn,yn] */
+/* n   : nombre de sommets */
+void drawPolygonFill(int *pts, int n, unsigned char color)
+{
+    int i, j;
+    int y, ymin, ymax;
+    int x1, y1, x2, y2;
+    int intersections[SCREEN_WIDTH];  /* au plus une intersection par colonne */
+    int count;
+    int tmp;
+    int dx, dy, x;
+
+    if (n < 3) return;
+
+    /* Trouver ymin et ymax du polygone */
+    ymin = pts[1];
+    ymax = pts[1];
+    for (i = 1; i < n; i++)
+    {
+        if (pts[i*2+1] < ymin) ymin = pts[i*2+1];
+        if (pts[i*2+1] > ymax) ymax = pts[i*2+1];
+    }
+
+    /* Clipping vertical */
+    if (ymin < 0)            ymin = 0;
+    if (ymax >= SCREEN_HEIGHT) ymax = SCREEN_HEIGHT - 1;
+
+    /* Pour chaque scanline */
+    for (y = ymin; y <= ymax; y++)
+    {
+        count = 0;
+
+        /* Trouver les intersections de la scanline y avec chaque arête */
+        for (i = 0; i < n; i++)
+        {
+            j = (i + 1) % n;  /* sommet suivant, bouclage automatique */
+
+            x1 = pts[i*2];    y1 = pts[i*2+1];
+            x2 = pts[j*2];    y2 = pts[j*2+1];
+
+            /* L'arête doit croiser la scanline */
+            if ((y1 <= y && y2 > y) || (y2 <= y && y1 > y))
+            {
+                /* Calcul de l'intersection par interpolation entière */
+                dy = y2 - y1;
+                dx = x2 - x1;
+                x  = x1 + (dx * (y - y1)) / dy;
+
+                intersections[count++] = x;
+            }
+        }
+
+        /* Tri des intersections (tri insertion — count petit en pratique) */
+        for (i = 1; i < count; i++)
+        {
+            tmp = intersections[i];
+            j = i - 1;
+            while (j >= 0 && intersections[j] > tmp)
+            {
+                intersections[j+1] = intersections[j];
+                j--;
+            }
+            intersections[j+1] = tmp;
+        }
+
+        /* Remplissage par paires d'intersections */
+        for (i = 0; i + 1 < count; i += 2)
+        {
+            int xstart = intersections[i];
+            int xend   = intersections[i+1];
+            int len;
+
+            /* Clipping horizontal */
+            if (xstart < 0)             xstart = 0;
+            if (xend   >= SCREEN_WIDTH) xend   = SCREEN_WIDTH - 1;
+
+            len = xend - xstart;
+            if (len > 0)
+                _fmemset(backbuffer + OFFSET(xstart, y), color, len);
+        }
     }
 }
 
@@ -673,26 +773,43 @@ void sceneRandom(void)
 /* SCENE 2 : palette */
 void scenePalette(void)
 {
+    /* État statique */
     static unsigned long lastRender         = 0UL;
+    static int           initialized        = 0;
     static int           phase5_initialized = 0;
- 
+    
+    /* Durées des phases (ms) */
+    const unsigned long D1 = 3000UL;
+    const unsigned long D2 = 1000UL;
+    const unsigned long D3 = 5000UL;
+    const unsigned long D4 = 5000UL;
+    const unsigned long D5 = 3000UL;
+    
+    /* Seuils cumulés (ms) */
+    const unsigned long T1 = D1;
+    const unsigned long T2 = T1 + D2;
+    const unsigned long T3 = T2 + D3;
+    const unsigned long T4 = T3 + D4;
+    const unsigned long T5 = T4 + D5;
+    
+    /* Variables locales */
     unsigned long now = readTimer();
     unsigned long render_interval_ms = 25UL;
- 
-    const unsigned long DURATION_FADE_IN        = 3000UL;
-    const unsigned long DURATION_STATIC_DEFAULT = 1000UL;
-    const unsigned long DURATION_RIGHT          = 5000UL;
-    const unsigned long DURATION_LEFT           = 5000UL;
-    const unsigned long DURATION_FADE_TO_PINK   = 3000UL;
- 
     unsigned long elapsed = elapsedTimeMs(sceneStart, now);
- 
-    clearScreen(0);
+    
+    /* Initialisation */
+    if (!initialized)
+    {        
+        initialized = 1;
+        copyPalette(workingPalette, defaultPalette);  // Installe la palette par defaut comme palette de travail
+        clearScreen(0);
+        flip();  
+    }
  
     /* Phase 1 : Fade-in depuis le noir */
-    if (elapsed < DURATION_FADE_IN)
+    if (elapsed < T1)
     {
-        float t = (float)elapsed / (float)DURATION_FADE_IN;  // 0 → 1
+        float t = (float)elapsed / (float)D1;  // 0 → 1
         fadePalette(workingPalette, t);
         drawPaletteGrid();
         flip();
@@ -700,7 +817,7 @@ void scenePalette(void)
     }
  
     /* Phase 2 : Affichage statique */
-    else if (elapsed < DURATION_FADE_IN + DURATION_STATIC_DEFAULT)
+    else if (elapsed < T2)
     {
         drawPaletteGrid();
         flip();
@@ -708,7 +825,7 @@ void scenePalette(void)
     }
  
     /* Phase 3 : Cycle droite */
-    else if (elapsed < DURATION_FADE_IN + DURATION_STATIC_DEFAULT + DURATION_RIGHT)
+    else if (elapsed < T3)
     {
         if (elapsedTimeMs(lastRender, now) >= render_interval_ms)
         {
@@ -721,7 +838,7 @@ void scenePalette(void)
     }
  
     /* Phase 4 : Cycle gauche */
-    else if (elapsed < DURATION_FADE_IN + DURATION_STATIC_DEFAULT + DURATION_RIGHT + DURATION_LEFT)
+    else if (elapsed < T4)
     {
         if (elapsedTimeMs(lastRender, now) >= render_interval_ms)
         {
@@ -734,10 +851,10 @@ void scenePalette(void)
     }
  
     /* Phase 5 : Fade progressif vers pinkPalette */
-    else if (elapsed < DURATION_FADE_IN + DURATION_STATIC_DEFAULT + DURATION_RIGHT + DURATION_LEFT + DURATION_FADE_TO_PINK)
+    else if (elapsed < T5)
     {
-        unsigned long fadeElapsed = elapsed - (DURATION_FADE_IN + DURATION_STATIC_DEFAULT + DURATION_RIGHT + DURATION_LEFT);
-        float t = (float)fadeElapsed / (float)DURATION_FADE_TO_PINK;  // 0 → 1
+        unsigned long fadeElapsed = elapsed - T4;
+        float t = (float)fadeElapsed / (float)D5;  // 0 → 1
  
         /* Sauvegarde de la palette de départ une seule fois */
         if (!phase5_initialized)
@@ -757,6 +874,7 @@ void scenePalette(void)
     /* Phase 6 : Fin de la scène */
     else
     {
+        initialized = 0;
         phase5_initialized = 0;
         setScene(SCENE_END);
     }
@@ -765,28 +883,34 @@ void scenePalette(void)
 /* SCENE 3 : fin */
 void sceneEnd(void)
 {
+    /* État statique */
     static unsigned long lastRender  = 0;
     static int           initialized = 0;
+    
+    /* Durée de la phase (ms) */
+    const unsigned long scene_ms = 5000UL;
+    
+    /* Variables locales */
     unsigned long now = readTimer();
     unsigned long render_interval_ms = 25UL;
-    unsigned long scene_ms           = 3000UL;
- 
+    int pts[] = { 0, 0, 319, 0, 160, 199 };
+       
     if (!initialized)
     {
-        lastRender  = now;
         initialized = 1;
+        lastRender  = now;
     }
  
     while (elapsedTimeMs(lastRender, now) >= render_interval_ms)
     {
         clearScreen(127);
+        drawPolygonFill(pts, 3, 200);
         flip();
         lastRender += (render_interval_ms * TARGET_HZ) / 1000UL;
     }
  
     if (elapsedTimeMs(sceneStart, now) > scene_ms)
     {
-        initialized = 0;
         shutdown();
         exit(0);
 	}
@@ -811,7 +935,6 @@ int main(void)
     setVideoMode(0x13);  // Passage en mode VGA 13h (320x200x256)
     
     getPalette(defaultPalette);  // Sauvegarder la palette par défaut
-    copyPalette(workingPalette, defaultPalette);  // En faire une copie dans workingPalette
     generatePinkPalette(pinkPalette);  // Génère la palette pinkPalette (noir + dégradé rouge => blanc)
        
     installTimer();  // Initialisation du timer
