@@ -3,7 +3,7 @@
    =========================================================
    Open Watcom 1.9 sous FreeDOS 1.4
    Projet DOS 16 bits (mode 13h)
-   Version : 01/05/2026 à 01:34
+   Version : 01/05/2026 à 02:34
    Pour compiler : wcl demo.c -q
 */
 
@@ -234,11 +234,11 @@ void flip(void)
    VIDEO PALETTE VGA (256 couleurs)
    ========================================================= */
 
-/* Sert à se synchroniser avec le rafraîchissement vertical de l’écran */
+/* Sert à se synchroniser avec le rafraîchissement vertical de l'écran */
 void waitVRetrace(void)
 {
-    while (inp(0x3DA) & 0x08);   /* Attendre la fin du retrace en cours */
-    while (!(inp(0x3DA) & 0x08)); /* Attendre le début du prochain retrace */
+    while (inp(0x3DA) & 0x08);     // Attendre la fin du retrace en cours
+    while (!(inp(0x3DA) & 0x08));  // Attendre le début du prochain retrace
 }
 
 /* Définit une couleur individuelle dans la palette VGA */
@@ -256,8 +256,14 @@ void setPalette(Color *pal)
     int i;
     
     waitVRetrace();  // Pour éviter le palette tearing
+    
+    outp(0x3C8, 0);  // Index initial
     for (i = 0; i < 256; i++)
-        setPaletteColor(i, pal[i].r, pal[i].g, pal[i].b);
+    {
+        outp(0x3C9, pal[i].r);
+        outp(0x3C9, pal[i].g);
+        outp(0x3C9, pal[i].b);
+    }
 }
 
 /* Lit la palette VGA actuelle et la copie dans un tableau en mémoire */
@@ -277,9 +283,7 @@ void getPalette(Color *pal)
 /* Copie une palette source vers une palette destination */
 void copyPalette(Color *dest, Color *src)
 {
-    int i;
-    
-    for (i = 0; i < 256; i++) dest[i] = src[i];
+    memcpy(dest, src, 256 * sizeof(Color));
 }
 
 /* Interpolation linéaire entre deux palettes (palA => palB) */
@@ -299,15 +303,13 @@ void lerpPalette(Color *dest, Color *palA, Color *palB, float t)
 void fadePalette(Color *pal, float t)
 {
     int i;
-    Color tmp;
     
     waitVRetrace();
-    for (i = 0; i < 256; i++)
-    {
-        tmp.r = (unsigned char)(pal[i].r * t);
-        tmp.g = (unsigned char)(pal[i].g * t);
-        tmp.b = (unsigned char)(pal[i].b * t);
-        setPaletteColor(i, tmp.r, tmp.g, tmp.b);
+    outp(0x3C8, 0);
+    for (i = 0; i < 256; i++) {
+        outp(0x3C9, (unsigned char)(pal[i].r * t));
+        outp(0x3C9, (unsigned char)(pal[i].g * t));
+        outp(0x3C9, (unsigned char)(pal[i].b * t));
     }
 }
 
@@ -361,7 +363,6 @@ void generateGrayPalette(Color *pal)
 void generatePinkPalette(Color *pal)
 {
     int i;
-    unsigned char r, g, b;
         
     pal[0].r = 0;
     pal[0].g = 0;
@@ -369,13 +370,9 @@ void generatePinkPalette(Color *pal)
     
     for (i = 1; i < 256; i++)
     {
-        r = 63;                 // Rouge toujours à max
-        g = (i * 63) / 255;     // Interpolation linéaire 0 => 63
-        b = (i * 63) / 255;     // Interpolation linéaire 0 => 63
-        
-        pal[i].r = r;
-        pal[i].g = g;
-        pal[i].b = b;
+        pal[i].r = 63;              // Rouge toujours à max
+        pal[i].g = (i * 63) / 255;  // Interpolation linéaire 0 => 63
+        pal[i].b = (i * 63) / 255;  // Interpolation linéaire 0 => 63
     }
 }
 
@@ -567,6 +564,7 @@ void drawPaletteGrid(void)
     int gridSize = 16;  // 16x16 = 256 couleurs
     int cellSize = 10;  // Taille des carrés
     int spacing  = 2;   // Espace entre carrés
+    int step = cellSize + spacing;
     
     /* Taille totale en tenant compte des espacements */
     int gridW = gridSize * cellSize + (gridSize - 1) * spacing;
@@ -584,8 +582,8 @@ void drawPaletteGrid(void)
     {
         for (x = 0; x < gridSize; x++)
         {
-            px = offsetX + x * (cellSize + spacing);
-            py = offsetY + y * (cellSize + spacing);
+            px = offsetX + x * step;
+            py = offsetY + y * step;
 
             drawRectFill(px, py,
                          px + cellSize - 1,
@@ -637,11 +635,12 @@ void sceneRandom(void)
     static unsigned long lcg_state   = 0;
 
     unsigned long now = readTimer();
-    unsigned long render_interval_ms = 100UL;  // Durée entre 2 frames
-    unsigned long scene_ms           = 5000UL; // Durée de la scène
+    unsigned long render_interval_ms = 100UL;
+    unsigned long scene_ms           = 5000UL;
+    unsigned int far *dst;  // Pointeur mot 16-bit vers le backbuffer
     unsigned long i;
-    
-    /* Initialisation au premier appel */
+    unsigned int pixel;  // Deux pixels packed en un mot
+
     if (!initialized) {
         lastRender = now;
         lcg_state  = (unsigned long)time(NULL);
@@ -649,24 +648,26 @@ void sceneRandom(void)
         setPalette(workingPalette);
         initialized = 1;
     }
-    
+
     while (elapsedTimeMs(lastRender, now) >= render_interval_ms)
     {
-        /* Remplissage LCG */
-        for (i = 0; i < BACKBUFFER_SIZE; i++)
+        dst = (unsigned int far *)backbuffer;  // Cast une seule fois
+
+        for (i = 0; i < 32000UL; i++)  // 64000 / 2
         {
             lcg_state = lcg_state * 1664525UL + 1013904223UL;
-            backbuffer[i] = (unsigned char)(lcg_state >> 24);
+            pixel = (unsigned int)(lcg_state >> 16);  // 2 octets utiles
+            dst[i] = pixel;
         }
         flip();
         lastRender += (render_interval_ms * TARGET_HZ) / 1000UL;
     }
- 
+
     if (elapsedTimeMs(sceneStart, now) > scene_ms)
     {
         initialized = 0;
         setScene(SCENE_PALETTE);
-	}
+    }
 }
 
 /* SCENE 2 : palette */
