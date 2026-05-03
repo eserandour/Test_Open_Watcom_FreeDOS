@@ -1,0 +1,13 @@
+system dos
+file main.obj
+file timer.obj
+file video.obj
+file palette.obj
+file graphics.obj
+file font.obj
+file fontdata.obj
+file scene.obj
+file scene1.obj
+file scene2.obj
+file scene3.obj
+name demo.exe
