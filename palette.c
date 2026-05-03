@@ -1,0 +1,203 @@
+/* =========================================================
+   PALETTE.C — Gestion de la palette VGA 256 couleurs
+   ========================================================= */
+
+#include <string.h>   /* memcpy, _fmemset                  */
+#include <conio.h>    /* outp, inp                         */
+#include "palette.h"
+#include "video.h"    /* waitVRetrace                      */
+
+/* =========================================================
+   PALETTES GLOBALES
+   =========================================================
+   Définies ici (une seule fois), déclarées extern dans
+   palette.h pour être accessibles depuis les autres modules.
+   ========================================================= */
+
+Color defaultPalette[256];   /* palette BIOS au démarrage   */
+Color workingPalette[256];   /* palette de travail courante */
+Color paletteA[256];         /* palette source pour lerp    */
+Color paletteB[256];         /* palette cible pour lerp     */
+Color grayPalette[256];      /* dégradé noir → blanc        */
+Color pinkPalette[256];      /* noir + rouge → blanc        */
+
+/* =========================================================
+   ACCÈS MATÉRIEL DAC VGA
+   =========================================================
+   Le DAC VGA s'accède via trois ports :
+     0x3C7 : port de lecture (sélectionne l'index à lire)
+     0x3C8 : port d'écriture (sélectionne l'index à écrire)
+     0x3C9 : port de données (R puis G puis B, 6 bits chacun)
+   Après chaque triplet R/G/B, l'index s'incrémente
+   automatiquement, ce qui permet d'écrire tous les
+   256 triplets en séquence sans ressélectionner l'index.
+   ========================================================= */
+
+/* Définit une couleur individuelle dans le DAC.
+   Utile pour changer une seule couleur sans tout réécrire. */
+void setPaletteColor(unsigned char index,
+                     unsigned char r, unsigned char g, unsigned char b)
+{
+    outp(0x3C8, index);   /* sélectionner l'index à écrire */
+    outp(0x3C9, r);       /* composante rouge (0-63)       */
+    outp(0x3C9, g);       /* composante verte (0-63)       */
+    outp(0x3C9, b);       /* composante bleue (0-63)       */
+}
+
+/* Envoie les 256 couleurs d'une palette vers le DAC.
+   On attend le retrace vertical avant d'écrire pour éviter
+   le "palette tearing" : des bandes visibles à l'écran
+   causées par un changement de palette en cours d'affichage.
+   L'index s'incrémente automatiquement après chaque octet,
+   donc on n'écrit 0x3C8 qu'une seule fois pour les 256. */
+void setPalette(Color *pal)
+{
+    int i;
+
+    waitVRetrace();      /* attendre le retrace vertical    */
+    outp(0x3C8, 0);     /* commencer à l'index 0           */
+    for (i = 0; i < 256; i++)
+    {
+        outp(0x3C9, pal[i].r);   /* rouge  */
+        outp(0x3C9, pal[i].g);   /* vert   */
+        outp(0x3C9, pal[i].b);   /* bleu   */
+        /* l'index DAC passe automatiquement à i+1 */
+    }
+}
+
+/* Lit les 256 couleurs actuelles du DAC VGA.
+   Port 0x3C7 : sélection de l'index en lecture.
+   Après chaque triplet lu sur 0x3C9, l'index s'incrémente
+   automatiquement (même mécanisme qu'en écriture). */
+void getPalette(Color *pal)
+{
+    int i;
+    for (i = 0; i < 256; i++)
+    {
+        outp(0x3C7, i);            /* sélectionner l'index  */
+        pal[i].r = inp(0x3C9);    /* lire rouge            */
+        pal[i].g = inp(0x3C9);    /* lire vert             */
+        pal[i].b = inp(0x3C9);    /* lire bleu             */
+    }
+}
+
+/* =========================================================
+   MANIPULATION DE PALETTE
+   ========================================================= */
+
+/* Copie une palette complète (256 * 3 octets = 768 octets).
+   memcpy est plus rapide qu'une boucle manuelle. */
+void copyPalette(Color *dest, Color *src)
+{
+    memcpy(dest, src, 256 * sizeof(Color));
+}
+
+/* Interpolation linéaire entre deux palettes.
+   Pour chaque composante : dest = palA + t * (palB - palA)
+   Le cast en (int) avant la soustraction est nécessaire
+   car les composantes sont unsigned char : sans lui,
+   une soustraction négative produirait un résultat erroné
+   (débordement unsigned). */
+void lerpPalette(Color *dest, Color *palA, Color *palB, float t)
+{
+    int i;
+    for (i = 0; i < 256; i++)
+    {
+        dest[i].r = (unsigned char)(palA[i].r + t * (int)(palB[i].r - palA[i].r));
+        dest[i].g = (unsigned char)(palA[i].g + t * (int)(palB[i].g - palA[i].g));
+        dest[i].b = (unsigned char)(palA[i].b + t * (int)(palB[i].b - palA[i].b));
+    }
+}
+
+/* Applique un facteur de luminosité et envoie au DAC.
+   Chaque composante est multipliée par t (0.0 à 1.0).
+   Ne modifie pas pal en mémoire : les valeurs originales
+   sont préservées pour pouvoir refaire le calcul à chaque
+   frame (fade progressif). */
+void fadePalette(Color *pal, float t)
+{
+    int i;
+    waitVRetrace();
+    outp(0x3C8, 0);
+    for (i = 0; i < 256; i++)
+    {
+        outp(0x3C9, (unsigned char)(pal[i].r * t));
+        outp(0x3C9, (unsigned char)(pal[i].g * t));
+        outp(0x3C9, (unsigned char)(pal[i].b * t));
+    }
+}
+
+/* Décale toutes les couleurs d'un cran vers la gauche.
+   Sauvegarde pal[start], décale pal[start+1..end] d'un
+   cran, remet la sauvegarde en pal[end].
+   Effet visuel : les couleurs "tournent" vers la gauche.
+   Appelle setPalette() pour appliquer immédiatement. */
+void cyclePaletteLeft(Color *pal, int start, int end)
+{
+    int i;
+    Color tmp = pal[start];          /* sauvegarder le premier */
+    for (i = start; i < end; i++)
+        pal[i] = pal[i + 1];         /* décaler vers la gauche */
+    pal[end] = tmp;                  /* remettre en fin        */
+    setPalette(pal);
+}
+
+/* Décale toutes les couleurs d'un cran vers la droite.
+   Sauvegarde pal[end], décale pal[start..end-1] d'un
+   cran, remet la sauvegarde en pal[start].
+   Effet visuel : les couleurs "tournent" vers la droite. */
+void cyclePaletteRight(Color *pal, int start, int end)
+{
+    int i;
+    Color tmp = pal[end];            /* sauvegarder le dernier */
+    for (i = end; i > start; i--)
+        pal[i] = pal[i - 1];         /* décaler vers la droite */
+    pal[start] = tmp;                /* remettre en tête       */
+    setPalette(pal);
+}
+
+/* =========================================================
+   GÉNÉRATEURS DE PALETTE
+   ========================================================= */
+
+/* Remplit toute la palette de noir.
+   _fmemset avec far pointer (palette en mémoire normale,
+   mais _fmemset accepte aussi les near pointers en large). */
+void generateBlackPalette(Color *pal)
+{
+    _fmemset(pal, 0, 256 * sizeof(Color));
+}
+
+/* Génère un dégradé linéaire du noir au blanc.
+   Les composantes VGA sont sur 6 bits (0-63).
+   index / 4 = index >> 2 convertit 0-255 en 0-63. */
+void generateGrayPalette(Color *pal)
+{
+    int i;
+    unsigned char v;
+    for (i = 0; i < 256; i++)
+    {
+        v = (unsigned char)(i >> 2);  /* 0-255 → 0-63 */
+        pal[i].r = v;
+        pal[i].g = v;
+        pal[i].b = v;
+    }
+}
+
+/* Génère la palette rose/rouge :
+   - index 0 : noir total (fond d'écran)
+   - index 1-255 : rouge fixe à 63 (maximum), vert et bleu
+     qui montent linéairement de 0 à 63.
+   Résultat visuel : du rouge vif vers le blanc en passant
+   par le rose. Formule : (i * 63) / 255 = i / 4.04... */
+void generatePinkPalette(Color *pal)
+{
+    int i;
+    pal[0].r = 0; pal[0].g = 0; pal[0].b = 0;   /* noir */
+    for (i = 1; i < 256; i++)
+    {
+        pal[i].r = 63;                                  /* rouge max        */
+        pal[i].g = (unsigned char)((i * 63) / 255);    /* 0 → 63 linéaire */
+        pal[i].b = (unsigned char)((i * 63) / 255);    /* 0 → 63 linéaire */
+    }
+}
