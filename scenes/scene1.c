@@ -1,5 +1,5 @@
 /* =========================================================
-   SCRANDOM.C — Scène : pixels aléatoires
+   SCENE1.C — Scène : pixels aléatoires
    =========================================================
    Durée totale : 5 secondes, puis passage à SCENE_2.
 
