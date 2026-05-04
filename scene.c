@@ -35,8 +35,16 @@ unsigned long sceneStart = 0;
    Un tableau de pointeurs de fonctions : chaque entrée
    correspond à une valeur de l'enum Scene.
    runCurrentScene() n'a qu'à appeler scenes[currentScene]()
-   sans aucun switch/if. Extensible sans modifier ce code :
-   il suffit d'ajouter une entrée dans l'enum et ici.
+   sans aucun switch/if.
+
+   Avantages par rapport à un switch/case :
+   - Ajouter une scène = une ligne ici + une valeur dans l'enum.
+   - Pas de risque d'oublier un "break" ou un "case".
+   - Le compilateur génère un accès indirect par index,
+     plus rapide qu'une chaîne de comparaisons branchées.
+
+   Contrainte : l'ordre des entrées doit correspondre
+   exactement à l'ordre des valeurs dans l'enum Scene.
    ========================================================= */
 
 typedef void (*SceneFunc)(void);   /* type pointeur de fonction */
