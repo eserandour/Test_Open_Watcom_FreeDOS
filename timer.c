@@ -35,11 +35,18 @@ static void interrupt new_timer_isr(void)
     /* Incrémenter le compteur de ticks global */
     timer_ticks++;
 
-    /* Accumuler pour savoir quand appeler l'ISR BIOS.
-       Le BIOS doit recevoir ses interruptions à 18,2 Hz
-       pour maintenir l'horloge DOS correcte.
-       Comme on tourne à 70 Hz (70/18,2 ≈ 3,84 fois plus
-       vite), on appelle le BIOS environ 1 fois sur 4. */
+    /* Pourquoi cet accumulateur ?
+       Notre ISR tourne à 70 Hz, mais le BIOS s'attend à être
+       appelé à 18,2 Hz (= 1 193 180 / 65536). Si on ne l'appelle
+       jamais, l'horloge DOS décroche et certains drivers plantent.
+
+       Principe : à chaque tick, on accumule DIVISOR (≈ 17045).
+       Quand l'accumulateur franchit 65536, on a "simulé" une
+       interruption PIT complète à la fréquence BIOS, donc on
+       passe la main au BIOS et on retranche 65536.
+
+       En moyenne : 65536 / 17045 ≈ 3,84 ticks avant de chaîner,
+       ce qui donne 70 / 3,84 ≈ 18,2 appels BIOS par seconde. */
     accum += DIVISOR;
 
     if (accum >= 65536UL)
@@ -162,11 +169,17 @@ unsigned long elapsedTimeMs(unsigned long start, unsigned long stop)
    Pause précise
    --------------------------------------------------------- */
 
-/* Attend ms millisecondes en bouclant activement.
-   Convertit ms en ticks, puis attend que timer_ticks
-   ait avancé du bon nombre de ticks.
-   NOP : instruction vide, évite que le compilateur
-   optimise la boucle vide en la supprimant. */
+/* Attente active (busy-wait) pendant ms millisecondes.
+   Convertit ms en ticks (ms * TARGET_HZ / 1000), puis
+   boucle jusqu'à ce que timer_ticks ait avancé d'autant.
+
+   Pourquoi le NOP dans la boucle ?
+   Sans instruction, certains compilateurs suppriment la
+   boucle entière (ils supposent qu'une boucle sans effet
+   de bord est inutile). Le NOP force la génération d'une
+   instruction réelle et préserve le comportement d'attente.
+   timer_ticks est volatile, ce qui protège déjà en théorie,
+   mais le NOP est une garantie explicite supplémentaire. */
 void pause(unsigned long ms)
 {
     unsigned long start          = timer_ticks;
@@ -174,6 +187,6 @@ void pause(unsigned long ms)
 
     while ((unsigned long)(timer_ticks - start) < ticks_to_wait)
     {
-        _asm { nop }   /* attente active sans rien faire */
+        _asm { nop }   /* empêche l'optimiseur de supprimer la boucle */
     }
 }
