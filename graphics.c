@@ -27,7 +27,8 @@ void clearScreen(unsigned char color)
    OFFSET(x, y) = y*320 + x, optimisé avec des shifts. */
 void putPixel(int x, int y, unsigned char color)
 {
-    backbuffer[OFFSET(x, y)] = color;
+    if (x >= 0 && x < SCREEN_WIDTH && y >= 0 && y < SCREEN_HEIGHT)
+        backbuffer[OFFSET(x, y)] = color;
 }
 
 /* Lit la couleur (index palette) d'un pixel du backbuffer. */
@@ -189,10 +190,15 @@ void drawPolygonFill(int *pts, int n, unsigned char color)
             intersections[j+1] = tmp;
         }
 
-        /* Remplissage par paires d'intersections.
-           Entre x[0] et x[1] : intérieur. Entre x[1] et
-           x[2] : extérieur. Entre x[2] et x[3] : intérieur.
-           etc. (règle pair-impair). */
+        /* Remplissage par paires d'intersections — règle pair-impair.
+           En partant du bord gauche, on alterne dehors/dedans à chaque
+           arête franchie :
+             avant x[0]        : dehors
+             de x[0] à x[1]   : dedans  → on remplit
+             de x[1] à x[2]   : dehors
+             de x[2] à x[3]   : dedans  → on remplit
+             etc.
+           On remplit donc les segments d'indices pairs (0-1, 2-3...). */
         for (i = 0; i + 1 < count; i += 2)
         {
             int xstart = intersections[i];
