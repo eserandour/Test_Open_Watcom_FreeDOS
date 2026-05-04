@@ -8,10 +8,10 @@
    Les données brutes des glyphes sont dans fontdata.c.
    ========================================================= */
 
-#include <string.h>    /* memset                            */
-#include <dos.h>       /* MK_FP                             */
-#include "video.h"     /* SCREEN_WIDTH                      */
-#include "graphics.h"  /* putPixel                          */
+#include <string.h>    /* memset */
+#include <dos.h>       /* MK_FP */
+#include "video.h"     /* SCREEN_WIDTH */
+#include "graphics.h"  /* putPixel */
 #include "font.h"
 #include "fontdata.h"  /* _initFont8D, _initFont16D */
 
@@ -58,7 +58,7 @@ static void initFontBank(FontBank *fb, FontSize size)
     fb->capacity        = FONT_BANK_CAPACITY;
     fb->bytes_per_glyph = bpg;
 
-    for (i = 0; i < 256; i++) fb->lut[i] = -1;
+    for (i = 0; i < 128; i++) fb->lut[i] = -1;
     memset(fb->data, 0, sizeof(fb->data));
 }
 
