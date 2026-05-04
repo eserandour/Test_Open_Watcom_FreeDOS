@@ -35,8 +35,8 @@
 #define FONT16_GLYPH_BYTES  32
 
 /* Nombre maximum de glyphes par FontBank.
-   96 = nombre de caractères imprimables ASCII (32 à 127). */
-#define FONT_BANK_CAPACITY  96
+   128 = nombre de caractères imprimables ASCII (0 à 127). */
+#define FONT_BANK_CAPACITY  128
 
 /* ---------------------------------------------------------
    FontSize — tailles de glyphes supportées
@@ -57,7 +57,7 @@ typedef enum {
 /* Contient tous les glyphes d'une police bitmap custom.
    - size            : taille des glyphes (8 ou 16)
    - count           : nombre de glyphes définis
-   - capacity        : nombre max de glyphes (96)
+   - capacity        : nombre max de glyphes (128)
    - bytes_per_glyph : taille en octets d'un glyphe
    - lut[256]        : lut[c] = index du glyphe pour le
                        caractère c, ou -1 si non défini
@@ -67,7 +67,7 @@ typedef struct {
     int           count;
     int           capacity;
     int           bytes_per_glyph;
-    int           lut[256];
+    int           lut[128];
     unsigned char data[FONT_BANK_CAPACITY * FONT16_GLYPH_BYTES];
 } FontBank;
 
@@ -99,7 +99,7 @@ typedef struct {
    Polices globales prêtes à l'emploi
    --------------------------------------------------------- */
 
-/* Police BIOS ROM 8x8 (256 caractères IBM/ASCII). */
+/* Police BIOS ROM 8x8 (128 caractères IBM/ASCII). */
 extern Font FONT_BIOS;
 
 /* Polices custom initialisées par initMyFont*(). */
