@@ -94,10 +94,18 @@ void copyPalette(Color *dest, Color *src)
 
 /* Interpolation linéaire entre deux palettes.
    Pour chaque composante : dest = palA + t * (palB - palA)
-   Le cast en (int) avant la soustraction est nécessaire
-   car les composantes sont unsigned char : sans lui,
-   une soustraction négative produirait un résultat erroné
-   (débordement unsigned). */
+     t = 0.0 → dest = palA (100% source)
+     t = 0.5 → dest = mélange à 50%
+     t = 1.0 → dest = palB (100% cible)
+
+   Pourquoi le cast (int) avant la soustraction ?
+   Les composantes sont unsigned char (toujours >= 0).
+   En C, soustraire deux unsigned char donne un unsigned int :
+   si palB < palA, le résultat "enroule" et devient un grand
+   nombre positif (ex : 10u - 20u = 65526 en 16 bits unsigned)
+   au lieu de -10. Le cast (int) force l'arithmétique signée
+   pour que la différence puisse être négative, ce qui est
+   indispensable pour interpoler dans les deux sens. */
 void lerpPalette(Color *dest, Color *palA, Color *palB, float t)
 {
     int i;
