@@ -6,7 +6,7 @@
    suivante en appuyant sur n'importe quelle touche.
 
    Sous-phases :
-   1. FONT_BIOS : les 256 caractères ASCII/IBM (ROM BIOS)
+   1. FONT_BIOS : 128 caractères ASCII/IBM (ROM BIOS)
    2. FONT_8    : les caractères définis dans fontdata.c
    3. FONT_16   : les caractères définis dans fontdata.c
 
@@ -57,25 +57,25 @@ typedef enum {
    ========================================================= */
 
 /* Sous-phase 1 : FONT_BIOS 8x8
-   Affiche les 256 caractères en grille 32x8.
+   Affiche les 128 caractères en grille 32x8.
    Chaque cellule = 9 px (8 px glyphe + 1 px espace).
    On accède directement à FONT_BIOS sans passer par la LUT
-   car tous les 256 caractères sont toujours définis en ROM. */
+   car tous les 128 caractères sont toujours définis en ROM. */
 static void drawPhase1(void)
 {
     int c, col, row;
-    int startX = (SCREEN_WIDTH  - 32 * 9) / 2;
-    int startY = (SCREEN_HEIGHT - 8  * 9) / 2 + 8;
+    int startX = (SCREEN_WIDTH  - 16 * 10) / 2;
+    int startY = (SCREEN_HEIGHT - 8  * 10) / 2 + 9;
 
-    drawTextCentered(4, "FONT BIOS 8x8 - 256 caracteres", 255, &FONT_BIOS);
-    drawLine(4, 14, 315, 14, 100);
+    drawTextCentered(4, "FONT BIOS 8x8 - 128 caracteres", 255, &FONT_BIOS);
+    drawLine(4, 15, 315, 15, 100);
 
-    for (c = 0; c < 256; c++)
+    for (c = 0; c < 128; c++)
     {
-        col = c % 32;
-        row = c / 32;
-        drawChar(startX + col * 9,
-                 startY + row * 9,
+        col = c % 16;
+        row = c / 16;
+        drawChar(startX + col * 10,
+                 startY + row * 10,
                  (unsigned char)c, 255, &FONT_BIOS);
     }
 }
@@ -88,38 +88,48 @@ static void drawPhase2(void)
 {
     int c, col = 0, row = 0;
     int startX = (SCREEN_WIDTH - 16 * 10) / 2;
-    int startY = 24;
+    int startY = (SCREEN_HEIGHT - 8  * 10) / 2 + 9;
 
-    drawTextCentered(4, "FONT 8 custom - caracteres definis", 255, &FONT_BIOS);
-    drawLine(4, 14, 315, 14, 100);
+    drawTextCentered(4, "FONT 8x8 - caracteres personnalises", 255, &FONT_BIOS);
+    drawLine(4, 15, 315, 15, 100);
 
-    for (c = 0; c < 256; c++)
+    for (c = 0; c < 128; c++)
     {
-        /* Tester la LUT de la FontBank sous-jacente. */
-        if (myFont8.lut[c] == -1) continue;
-
+        /* Ce filtre est intentionnellement désactivé.
+           Sans lui, drawChar() est appelé pour tous les c de 0 à 127,
+           y compris ceux absents de la FontBank. drawChar() les ignore
+           silencieusement (slot < 0 → return), ce qui laisse des
+           "trous" dans la grille aux positions non définies.
+           C'est un choix de présentation pour la démo : la grille
+           complète 16×8 est plus lisible qu'une grille partielle. */
+        // if (myFont8.lut[c] == -1) continue;
+        
+        col = c % 16;
+        row = c / 16;
         drawChar(startX + col * 10,
                  startY + row * 10,
                  (unsigned char)c, 255, &FONT_8);
-        col++;
-        if (col >= 16) { col = 0; row++; }
     }
 }
 
 /* Sous-phase 3 : FONT_16 (myFont16 16x16 custom)
    Grille de 16 colonnes, espacement 18 px. */
+   
 static void drawPhase3(void)
 {
     int c, col = 0, row = 0;
     int startX = (SCREEN_WIDTH - 16 * 18) / 2;
-    int startY = 24;
+    int startY = (SCREEN_HEIGHT - 8  * 18) / 2 + 9;
 
-    drawTextCentered(4, "FONT 16 custom - caracteres definis", 255, &FONT_BIOS);
-    drawLine(4, 14, 315, 14, 100);
+    drawTextCentered(4, "FONT 16x16 - caracteres personnalises", 255, &FONT_BIOS);
+    drawLine(4, 15, 315, 15, 100);
 
-    for (c = 0; c < 256; c++)
+    for (c = 0; c < 128; c++)
     {
-        if (myFont16.lut[c] == -1) continue;
+        /* Même logique que drawPhase2 : filtre désactivé
+           pour afficher la grille complète avec les trous
+           aux positions non définies dans la FontBank. */
+        // if (myFont16.lut[c] == -1) continue;
 
         drawChar(startX + col * 18,
                  startY + row * 18,
