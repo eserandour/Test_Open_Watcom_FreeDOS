@@ -59,7 +59,7 @@ typedef enum {
    - count           : nombre de glyphes définis
    - capacity        : nombre max de glyphes (128)
    - bytes_per_glyph : taille en octets d'un glyphe
-   - lut[256]        : lut[c] = index du glyphe pour le
+   - lut[128]        : lut[c] = index du glyphe pour le
                        caractère c, ou -1 si non défini
    - data[]          : tableau compact de tous les glyphes */
 typedef struct {
@@ -86,13 +86,13 @@ typedef enum {
 
 /* Structure passée à toutes les fonctions de rendu.
    type  : indique si la police est BIOS ou custom.
-   bank  : pointeur vers la FontBank (si FONT_TYPE_BANK).
+   bank  : pointeur far vers la FontBank (si FONT_TYPE_BANK).
            NULL si FONT_TYPE_BIOS.
    size  : taille en pixels d'un glyphe (espacement). */
 typedef struct {
-    FontType  type;
-    FontBank *bank;
-    int       size;
+    FontType      type;
+    FontBank far *bank;
+    int           size;
 } Font;
 
 /* ---------------------------------------------------------
@@ -106,9 +106,10 @@ extern Font FONT_BIOS;
 extern Font FONT_8;    /* myFont8  8x8  */
 extern Font FONT_16;   /* myFont16 16x16 */
 
-/* FontBank sous-jacentes (accessibles pour lut[] etc.). */
-extern FontBank myFont8;
-extern FontBank myFont16;
+/* FontBank sous-jacentes allouées en far heap.
+   Initialisées par initMyFont8/16(), NULL avant. */
+extern FontBank far *myFont8;
+extern FontBank far *myFont16;
 
 /* ---------------------------------------------------------
    Initialisation
@@ -132,7 +133,7 @@ void initMyFont16(void);
 /* Ajoute ou remplace un glyphe 8x8 dans une FontBank.
    b0 = ligne du haut, b7 = ligne du bas.
    Bit 7 de chaque octet = pixel le plus à gauche. */
-void defineChar8(FontBank *fb, unsigned char c,
+void defineChar8(FontBank far *fb, unsigned char c,
                  unsigned char b0, unsigned char b1,
                  unsigned char b2, unsigned char b3,
                  unsigned char b4, unsigned char b5,
@@ -140,7 +141,7 @@ void defineChar8(FontBank *fb, unsigned char c,
 
 /* Ajoute ou remplace un glyphe 16x16.
    rows[16] : 16 unsigned int, bit 15 = pixel gauche. */
-void defineChar16(FontBank *fb, unsigned char c,
+void defineChar16(FontBank far *fb, unsigned char c,
                   unsigned int rows[16]);
 
 /* ---------------------------------------------------------
