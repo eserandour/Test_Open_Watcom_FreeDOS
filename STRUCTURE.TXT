@@ -4,13 +4,15 @@ projet/
 ├── video.h / video.c
 ├── palette.h / palette.c
 ├── graphics.h / graphics.c
+├── image.h / image.c
 ├── font.h / font.c
 ├── fontdata.h / fontdata.c
 ├── scene.h / scene.c
 ├── scenes/
 │   ├── scene1.c
 │   ├── scene2.c
-│   └── scene3.c
+│   ├── scene3.c
+│   └── scene4.c
 ├── BUILD.BAT
 ├── LINK.RSP
 └── CLEAN.BAT
