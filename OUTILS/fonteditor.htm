@@ -360,160 +360,7 @@
   }
   #json-io:focus { border-color: var(--sel); }
 
-  /* ── Zone drag & drop PNG ────────────────────────────── */
-  #png-drop-zone {
-    border: 2px dashed var(--border2);
-    border-radius: 8px;
-    padding: 14px;
-    text-align: center;
-    color: var(--dim);
-    font-size: 11px;
-    cursor: pointer;
-    transition: border-color 0.2s, background 0.2s;
-    position: relative;
-  }
-  #png-drop-zone:hover, #png-drop-zone.drag-over {
-    border-color: #c080ff;
-    background: #1a0a2a;
-    color: #c080ff;
-  }
-  #png-drop-zone input {
-    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%;
-  }
-  .png-icon { font-size: 20px; margin-bottom: 4px; }
 
-  /* ── Modal import PNG ────────────────────────────────── */
-  #png-modal-overlay {
-    display: none;
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,0.85);
-    z-index: 100;
-    align-items: center;
-    justify-content: center;
-  }
-  #png-modal-overlay.open { display: flex; }
-  #png-modal {
-    background: var(--panel);
-    border: 1px solid var(--border2);
-    border-radius: 12px;
-    padding: 24px;
-    max-width: 680px;
-    width: 90vw;
-    max-height: 90vh;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-  #png-modal h2 {
-    font-family: var(--display);
-    font-size: 14px;
-    color: var(--on);
-    letter-spacing: 0.06em;
-  }
-  #png-modal h2 span { color: #c080ff; }
-
-  .modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .modal-section-label {
-    font-size: 10px; font-weight: 600; letter-spacing: 0.12em;
-    color: var(--dim); text-transform: uppercase; margin-bottom: 8px;
-  }
-
-  /* Canvas de prévisualisation PNG */
-  #png-preview-canvas {
-    image-rendering: pixelated;
-    border: 1px solid var(--border2);
-    border-radius: 4px;
-    background: #000;
-    max-width: 100%;
-    display: block;
-  }
-
-  /* Grille de sélection des glyphes dans le PNG */
-  #png-glyph-grid-wrap {
-    overflow: auto;
-    background: #000;
-    border: 1px solid var(--border2);
-    border-radius: 4px;
-    padding: 4px;
-    max-height: 280px;
-  }
-  #png-glyph-canvas {
-    image-rendering: pixelated;
-    display: block;
-    cursor: crosshair;
-  }
-
-  /* Paramètres de détection */
-  .modal-params { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .param-row { display: flex; flex-direction: column; gap: 3px; }
-  .param-row label { font-size: 10px; color: var(--dim); }
-  .param-row input[type="number"] {
-    background: var(--btn);
-    border: 1px solid var(--border2);
-    border-radius: 4px;
-    color: var(--on);
-    font-family: var(--mono);
-    font-size: 12px;
-    padding: 4px 8px;
-    width: 100%;
-    outline: none;
-  }
-  .param-row input:focus { border-color: var(--sel); }
-
-  /* Sélection des caractères à importer */
-  #png-char-select {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(26px, 1fr));
-    gap: 3px;
-    max-height: 120px;
-    overflow-y: auto;
-    background: #080810;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 6px;
-  }
-  .png-char-btn {
-    aspect-ratio: 1;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 10px;
-    border-radius: 3px;
-    cursor: pointer;
-    background: #161620;
-    border: 1px solid transparent;
-    color: var(--dim);
-    transition: all 0.1s;
-  }
-  .png-char-btn:hover { background: #1e1e30; color: var(--text); border-color: var(--border2); }
-  .png-char-btn.selected { background: #3a1a5a; color: #c080ff; border-color: #7040a0; }
-
-  /* Glyphes extraits */
-  #png-extracted {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    max-height: 150px;
-    overflow-y: auto;
-    background: #080810;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px;
-  }
-  .extracted-glyph {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
-    cursor: pointer;
-    padding: 4px;
-    border-radius: 4px;
-    border: 1px solid transparent;
-    transition: all 0.1s;
-  }
-  .extracted-glyph:hover { border-color: var(--border2); background: #1a1a28; }
-  .extracted-glyph.sel { border-color: #7040a0; background: #1a0a28; }
-  .extracted-glyph canvas { image-rendering: pixelated; background: #000; }
-  .extracted-glyph span { font-size: 9px; color: var(--dim); }
 
   /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -658,16 +505,24 @@
       <div id="code-output"></div>
     </div>
 
-    <!-- Import PNG -->
+    <!-- Export PNG -->
     <div>
-      <div class="section-label">Import depuis PNG</div>
-      <div id="png-drop-zone" onclick="document.getElementById('png-file-input').click()">
-        <input type="file" id="png-file-input" accept="image/png,image/*" onchange="onPngFileSelected(event)">
-        <div class="png-icon">🖼</div>
-        <div>Déposer un PNG de police bitmap</div>
-        <div style="margin-top:4px;font-size:10px;color:#7040a0">ou cliquer pour parcourir</div>
+      <div class="section-label">Export PNG de la police</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="font-size:10px;color:var(--dim)">
+          Exporte tous les glyphes sur une grille 16×8 caractères (128 glyphes).
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <label style="font-size:11px;color:var(--text2)">Échelle px/bit :</label>
+          <select id="png-export-scale" style="background:var(--btn);border:1px solid var(--border2);border-radius:4px;color:var(--on);font-family:var(--mono);font-size:12px;padding:3px 8px;outline:none">
+            <option value="1">×1</option>
+            <option value="2" selected>×2</option>
+            <option value="4">×4</option>
+            <option value="8">×8</option>
+          </select>
+        </div>
+        <button class="btn accent" style="width:100%" onclick="exportFontPng()">🖼 Télécharger PNG de la police</button>
       </div>
-      <button class="btn accent" style="margin-top:8px;width:100%" onclick="openPngModal()">⚙ Configurer l'import PNG</button>
     </div>
 
     <!-- Sauvegarde JSON -->
@@ -710,128 +565,6 @@
   <span id="status-right">Font Editor — DOS 8×8 / 16×16 // mode 13h</span>
 </div>
 
-<!-- ══ MODALE IMPORT PNG ════════════════════════════════════ -->
-<div id="png-modal-overlay">
-  <div id="png-modal">
-    <h2>IMPORT PNG <span>//</span> Extraction de glyphes</h2>
-
-    <div class="modal-grid">
-      <!-- Colonne gauche : aperçu PNG + paramètres -->
-      <div style="display:flex;flex-direction:column;gap:12px">
-        <div>
-          <div class="modal-section-label">Image source</div>
-          <canvas id="png-preview-canvas" width="320" height="64"></canvas>
-        </div>
-
-        <div>
-          <div class="modal-section-label">Paramètres de grille</div>
-          <div class="modal-params">
-            <div class="param-row">
-              <label>Largeur glyphe (px)</label>
-              <input type="number" id="param-gw" value="8" min="1" max="64" oninput="refreshPngGrid()">
-            </div>
-            <div class="param-row">
-              <label>Hauteur glyphe (px)</label>
-              <input type="number" id="param-gh" value="8" min="1" max="64" oninput="refreshPngGrid()">
-            </div>
-            <div class="param-row">
-              <label>Offset X (px)</label>
-              <input type="number" id="param-ox" value="0" min="0" oninput="refreshPngGrid()">
-            </div>
-            <div class="param-row">
-              <label>Offset Y (px)</label>
-              <input type="number" id="param-oy" value="0" min="0" oninput="refreshPngGrid()">
-            </div>
-            <div class="param-row">
-              <label>Espacement X (px)</label>
-              <input type="number" id="param-sx" value="0" min="0" oninput="refreshPngGrid()">
-            </div>
-            <div class="param-row">
-              <label>Espacement Y (px)</label>
-              <input type="number" id="param-sy" value="0" min="0" oninput="refreshPngGrid()">
-            </div>
-            <div class="param-row">
-              <label>Colonnes</label>
-              <input type="number" id="param-cols" value="16" min="1" max="64" oninput="refreshPngGrid()">
-            </div>
-            <div class="param-row">
-              <label>Lignes</label>
-              <input type="number" id="param-rows" value="8" min="1" max="64" oninput="refreshPngGrid()">
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <div class="modal-section-label">Seuil de binarisation (0-255)</div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input type="range" id="param-threshold" min="0" max="255" value="128"
-              style="flex:1;accent-color:var(--sel)" oninput="refreshPngGrid();document.getElementById('threshold-val').textContent=this.value">
-            <span id="threshold-val" style="color:var(--yellow);width:28px;text-align:right;font-size:11px">128</span>
-          </div>
-          <div style="font-size:10px;color:var(--dim);margin-top:4px">
-            Pixel allumé si luminosité &lt; seuil (fond clair) ou &gt; seuil (fond sombre)
-          </div>
-          <label style="display:flex;gap:6px;align-items:center;margin-top:6px;font-size:11px;cursor:pointer">
-            <input type="checkbox" id="param-invert" oninput="refreshPngGrid()" style="accent-color:var(--sel)">
-            Inverser (fond sombre → pixels allumés)
-          </label>
-        </div>
-      </div>
-
-      <!-- Colonne droite : grille de sélection + mapping -->
-      <div style="display:flex;flex-direction:column;gap:12px">
-        <div>
-          <div class="modal-section-label">Grille détectée (cliquer pour sélectionner)</div>
-          <div id="png-glyph-grid-wrap">
-            <canvas id="png-glyph-canvas"></canvas>
-          </div>
-        </div>
-
-        <div>
-          <div class="modal-section-label">Associer les glyphes sélectionnés aux caractères</div>
-          <div style="font-size:10px;color:var(--dim);margin-bottom:6px">
-            1. Sélectionnez les glyphes dans la grille (dans l'ordre)<br>
-            2. Cliquez les caractères cibles ci-dessous<br>
-            3. Appuyez sur « Importer »
-          </div>
-
-          <!-- Aperçu des glyphes extraits sélectionnés -->
-          <div id="png-extracted"></div>
-        </div>
-
-        <div>
-          <div class="modal-section-label">Caractères cibles (dans l'ordre)</div>
-          <div style="font-size:10px;color:var(--dim);margin-bottom:6px">
-            Cliquer pour ajouter/retirer de la liste d'import
-          </div>
-          <div id="png-char-select"></div>
-          <div style="margin-top:6px;font-size:10px;color:var(--dim)">
-            Sélectionnés : <span id="png-chars-count" style="color:var(--yellow)">0</span> caractère(s)
-          </div>
-        </div>
-
-        <!-- Action rapide : importer séquence ASCII -->
-        <div>
-          <div class="modal-section-label">Import rapide (séquence ASCII)</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-            <input id="png-seq-input" placeholder="ex: ABCDEFGHIJKLMNOP..."
-              style="background:var(--btn);border:1px solid var(--border2);border-radius:5px;color:var(--on);font-family:var(--mono);font-size:12px;padding:4px 8px;flex:1;outline:none">
-            <button class="btn" onclick="applySeqMapping()">Appliquer</button>
-          </div>
-          <div style="font-size:10px;color:var(--dim);margin-top:4px">
-            Tape les caractères dans l'ordre des glyphes sélectionnés
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Boutons bas de modale -->
-    <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:8px;border-top:1px solid var(--border)">
-      <button class="btn" onclick="closePngModal()">Annuler</button>
-      <button class="btn primary" onclick="importFromPng()">✓ Importer les glyphes sélectionnés</button>
-    </div>
-  </div>
-</div>
 
 <script src="fonteditor.js"></script>
 </body>
