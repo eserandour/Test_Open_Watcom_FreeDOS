@@ -169,7 +169,7 @@ function setMode(m) {
   document.getElementById('btn-mode8').classList.toggle('active', m === 8);
   document.getElementById('btn-mode16').classList.toggle('active', m === 16);
   document.getElementById('status-right').textContent =
-    `Font Editor — DOS ${m}×${m} // mode 13h`;
+    `Font Editor — DOS ${m}×${m}`;
   document.title = `Font Editor — DOS ${m}×${m}`;
 
   // Classe sur body pour CSS cellule 16x16
