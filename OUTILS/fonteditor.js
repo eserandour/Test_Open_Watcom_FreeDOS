@@ -5,7 +5,7 @@
 // 128 caractères ASCII complets : 0x00 à 0x7F
 const CHARS = Array.from({length: 128}, (_, i) => String.fromCharCode(i));
 
-// Police BIOS IBM CP437 -- 128 glyphes (0x00-0x7F), cles numeriques
+// Police BIOS FreeDOS 1.4 -- 128 glyphes (0x00-0x7F), extraite depuis capture VirtualBox
 const DEFAULT_FONT8 = [
   [0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00], // 0x00
   [0x7E,0x81,0xA5,0x81,0xBD,0x99,0x81,0x7E], // 0x01
@@ -616,13 +616,11 @@ function updateCodeOutput() {
 }
 
 function charLiteral(c) {
-  // Produit le littéral C correct pour un caractère
   const code = c.charCodeAt(0);
-  // Codes non-imprimables : notation entière décimale comme fontdata.c (ex: 0, 127)
   if (code < 0x20 || code === 0x7F) return String(code);
-  if (c === "'")   return "'\''" ;
-  if (c === '\\') return "'\\\\'" ;
-  return `'${c}'`;
+  if (c === "'")  return "'\\''";
+  if (c === "\\") return "'\\\\'";
+  return "'" + c + "'";
 }
 
 function hex8(b)  { return '0x' + b.toString(16).toUpperCase().padStart(2,'0'); }
