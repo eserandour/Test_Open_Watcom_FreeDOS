@@ -15,7 +15,7 @@
 
    Pour ajouter une nouvelle police :
      1. Déclarer une FontBank dans fontdata.c.
-     2. La charger avec initFontBank() + defineChar*().
+     2. La charger avec _initFontBank() + defineChar*().
      3. Créer une Font pointant vers cette FontBank.
 
    Fonctionnement d'un glyphe :
@@ -34,9 +34,46 @@
 #define FONT8_GLYPH_BYTES   8
 #define FONT16_GLYPH_BYTES  32
 
+/* ---------------------------------------------------------
+   Macros CP437 — accents et caractères spéciaux français
+   --------------------------------------------------------- */
+
+/* Usage : drawText(x, y, "caract" eGRAVE "re", 255, &FONT_8);
+   La concaténation de littéraux adjacents est résolue à la
+   compilation, sans coût à l'exécution.
+
+   Attention avec \xNN : si le caractère suivant est un chiffre
+   hexadécimal (0-9, a-f, A-F), le compilateur l'incorpore dans
+   l'échappement. Dans ce cas, couper la chaîne :
+     "\x82" "e"  et non  "\x82e"  (lu comme un seul code 0x82E) */
+
+/* Minuscules accentuées */
+#define eAIGU   "\x82"   /* é  CP437 0x82 */
+#define eGRAVE  "\x8A"   /* è  CP437 0x8A */
+#define eCIRC   "\x88"   /* ê  CP437 0x88 */
+#define eTREMA  "\x89"   /* ë  CP437 0x89 */
+#define aGRAVE  "\x85"   /* à  CP437 0x85 */
+#define aCIRC   "\x83"   /* â  CP437 0x83 */
+#define aTREMA  "\x84"   /* ä  CP437 0x84 */
+#define uGRAVE  "\x97"   /* ù  CP437 0x97 */
+#define uCIRC   "\x96"   /* û  CP437 0x96 */
+#define uTREMA  "\x81"   /* ü  CP437 0x81 */
+#define iCIRC   "\x8C"   /* î  CP437 0x8C */
+#define iTREMA  "\x8B"   /* ï  CP437 0x8B */
+#define oCIRC   "\x93"   /* ô  CP437 0x93 */
+#define oTREMA  "\x94"   /* ö  CP437 0x94 */
+#define cCED    "\x87"   /* ç  CP437 0x87 */
+
+/* Majuscules accentuées */
+#define EAIGU   "\x90"   /* É  CP437 0x90 */
+#define ATREMA  "\x8E"   /* Ä  CP437 0x8E */
+#define OTREMA  "\x99"   /* Ö  CP437 0x99 */
+#define UTREMA  "\x9A"   /* Ü  CP437 0x9A */
+#define CCED    "\x80"   /* Ç  CP437 0x80 */
+
 /* Nombre maximum de glyphes par FontBank.
-   128 = nombre de caractères imprimables ASCII (0 à 127). */
-#define FONT_BANK_CAPACITY  128
+   256 = ensemble complet des caractères (0 à 255). */
+#define FONT_BANK_CAPACITY  256
 
 /* ---------------------------------------------------------
    FontSize — tailles de glyphes supportées
@@ -59,7 +96,7 @@ typedef enum {
    - count           : nombre de glyphes définis
    - capacity        : nombre max de glyphes (128)
    - bytes_per_glyph : taille en octets d'un glyphe
-   - lut[128]        : lut[c] = index du glyphe pour le
+   - lut[256]        : lut[c] = index du glyphe pour le
                        caractère c, ou -1 si non défini
    - data[]          : tableau compact de tous les glyphes */
 typedef struct {
@@ -67,7 +104,7 @@ typedef struct {
     int           count;
     int           capacity;
     int           bytes_per_glyph;
-    int           lut[128];
+    int           lut[256];
     unsigned char data[FONT_BANK_CAPACITY * FONT16_GLYPH_BYTES];
 } FontBank;
 
@@ -117,7 +154,7 @@ extern FontBank far *myFont16;
 
 /* Charge biosFont depuis la ROM BIOS (F000:FA6E).
    À appeler avant tout drawChar avec FONT_BIOS. */
-void initFont(void);
+void initBiosFont(void);
 
 /* Initialise myFont8 et charge ses glyphes depuis fontdata.c.
    Met à jour FONT_8 pour qu'elle pointe sur myFont8. */
