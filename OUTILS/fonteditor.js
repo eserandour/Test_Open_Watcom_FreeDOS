@@ -5,7 +5,7 @@
 // 128 caractères ASCII complets : 0x00 à 0x7F
 const CHARS = Array.from({length: 128}, (_, i) => String.fromCharCode(i));
 
-// Police BIOS FreeDOS 1.4 -- 128 glyphes (0x00-0x7F), extraite depuis capture VirtualBox
+// Police 128 glyphes (0x00-0x7F)
 const DEFAULT_FONT8 = [
   [0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00], // 0x00
   [0x7E,0x81,0xA5,0x81,0xBD,0x99,0x81,0x7E], // 0x01
@@ -175,10 +175,6 @@ function setMode(m) {
   // Classe sur body pour CSS cellule 16x16
   document.body.classList.toggle('mode16', m === 16);
 
-  // Mettre à jour les paramètres de la modale PNG
-  document.getElementById('param-gw').value = m;
-  document.getElementById('param-gh').value = m;
-
   rebuildAll();
   updateAll();
 }
@@ -191,7 +187,6 @@ function rebuildAll() {
   buildColLabels();
   buildGrid();
   buildCharGrid();
-  buildPngCharSelect();
 }
 
 function buildColLabels() {
@@ -863,408 +858,54 @@ function applyHex() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// IMPORT PNG
+// EXPORT PNG
 // ═══════════════════════════════════════════════════════════
 
-let pngImage     = null;    // HTMLImageElement source
-let pngBitmap    = null;    // ImageData du PNG original
-let pngExtracted = [];      // [{glyph, label}] extraits
-let pngSelected  = [];      // indices sélectionnés dans la grille
-let pngCharMapping = [];    // caractères cibles sélectionnés
-
-// Drag & drop sur la zone principale
-const dropZone = document.getElementById('png-drop-zone');
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-dropZone.addEventListener('drop', e => {
-  e.preventDefault();
-  dropZone.classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file) loadPngFile(file);
-});
-
-function onPngFileSelected(event) {
-  const file = event.target.files[0];
-  if (file) loadPngFile(file);
-}
-
-function loadPngFile(file) {
-  const reader = new FileReader();
-  reader.onload = e => {
-    const img = new Image();
-    img.onload = () => {
-      pngImage = img;
-      // Afficher l'aperçu dans la modale
-      const canvas = document.getElementById('png-preview-canvas');
-      // Afficher à taille réelle mais borné à 640px
-      const scale = Math.min(1, 640 / img.width);
-      canvas.width  = img.width  * scale;
-      canvas.height = img.height * scale;
-      const ctx = canvas.getContext('2d');
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-      // Extraire les données brutes pour la binarisation
-      const offscreen = document.createElement('canvas');
-      offscreen.width = img.width; offscreen.height = img.height;
-      offscreen.getContext('2d').drawImage(img, 0, 0);
-      pngBitmap = offscreen.getContext('2d').getImageData(0, 0, img.width, img.height);
-
-      // Pré-remplir les paramètres selon le mode courant
-      document.getElementById('param-gw').value = MODE;
-      document.getElementById('param-gh').value = MODE;
-
-      openPngModal();
-      refreshPngGrid();
-    };
-    img.src = e.target.result;
-  };
-  reader.readAsDataURL(file);
-}
-
-function openPngModal() {
-  document.getElementById('png-modal-overlay').classList.add('open');
-  if (pngImage) refreshPngGrid();
-}
-
-function closePngModal() {
-  document.getElementById('png-modal-overlay').classList.remove('open');
-}
-
-// Fermer la modale en cliquant hors
-document.getElementById('png-modal-overlay').addEventListener('click', e => {
-  if (e.target === document.getElementById('png-modal-overlay')) closePngModal();
-});
-
-function getPngParam(id) { return parseInt(document.getElementById(id).value) || 0; }
-
-function refreshPngGrid() {
-  if (!pngImage || !pngBitmap) return;
-
-  const gw        = getPngParam('param-gw');
-  const gh        = getPngParam('param-gh');
-  const ox        = getPngParam('param-ox');
-  const oy        = getPngParam('param-oy');
-  const sx        = getPngParam('param-sx');
-  const sy        = getPngParam('param-sy');
-  const cols      = getPngParam('param-cols');
-  const rows      = getPngParam('param-rows');
-  const threshold = parseInt(document.getElementById('param-threshold').value);
-  const invertPx  = document.getElementById('param-invert').checked;
-
-  if (gw < 1 || gh < 1 || cols < 1 || rows < 1) return;
-
-  const totalGlyphs = cols * rows;
-  pngExtracted = [];
-
-  for (let gy = 0; gy < rows; gy++) {
-    for (let gx = 0; gx < cols; gx++) {
-      const srcX = ox + gx * (gw + sx);
-      const srcY = oy + gy * (gh + sy);
-      // Extraire les pixels
-      const glyphData = extractGlyph(srcX, srcY, gw, gh, threshold, invertPx);
-      pngExtracted.push({ data: glyphData, gw, gh, label: `${gx},${gy}` });
-    }
-  }
-
-  // Redessiner la grille de sélection dans la modale
-  drawPngSelectionGrid(cols, rows, gw, gh, ox, oy, sx, sy, threshold, invertPx);
-
-  // Mettre à jour l'aperçu des glyphes extraits sélectionnés
-  updateExtractedPreview();
-}
-
-function extractGlyph(srcX, srcY, gw, gh, threshold, invertPx) {
-  // Retourne un tableau de bytes bitmap (ligne par ligne, MSB first)
-  // Pour 8x8 : 8 bytes. Pour 16x16 : 32 bytes (2 par ligne). Pour d'autres tailles : adaptatif.
-  const data = pngBitmap.data;
-  const W    = pngBitmap.width;
-  const rows = [];
-
-  for (let r = 0; r < gh; r++) {
-    const rowBytes = [];
-    let curByte = 0, bitCount = 0;
-    for (let c = 0; c < gw; c++) {
-      const px = srcX + c;
-      const py = srcY + r;
-      let on = false;
-      if (px >= 0 && px < pngBitmap.width && py >= 0 && py < pngBitmap.height) {
-        const idx = (py * W + px) * 4;
-        const r_ = data[idx], g_ = data[idx+1], b_ = data[idx+2], a_ = data[idx+3];
-        // Luminosité (0-255)
-        const lum = (a_ === 0) ? 255 : Math.round(0.299 * r_ + 0.587 * g_ + 0.114 * b_);
-        on = invertPx ? (lum < threshold) : (lum >= threshold);
-      }
-      curByte = (curByte << 1) | (on ? 1 : 0);
-      bitCount++;
-      if (bitCount === 8) { rowBytes.push(curByte & 0xFF); curByte = 0; bitCount = 0; }
-    }
-    if (bitCount > 0) {
-      curByte <<= (8 - bitCount);
-      rowBytes.push(curByte & 0xFF);
-    }
-    rows.push(...rowBytes);
-  }
-  return rows;
-}
-
-function drawPngSelectionGrid(cols, rows, gw, gh, ox, oy, sx, sy, threshold, invertPx) {
-  const ZOOM    = 4;
-  const PADDING = 2;
-  const canvas  = document.getElementById('png-glyph-canvas');
-  const cw = cols * (gw * ZOOM + PADDING) + PADDING;
-  const ch = rows * (gh * ZOOM + PADDING) + PADDING;
-  canvas.width  = cw;
-  canvas.height = ch;
+function exportFontPng() {
+  const scale = parseInt(document.getElementById('png-export-scale').value) || 2;
+  const cols  = 16;
+  const rows  = Math.ceil(CHARS.length / cols); // 8 lignes pour 128 chars
+  const glyph = MODE;
+  const canvas = document.createElement('canvas');
+  canvas.width  = cols * glyph * scale;
+  canvas.height = rows * glyph * scale;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#111';
-  ctx.fillRect(0, 0, cw, ch);
 
-  for (let gy = 0; gy < rows; gy++) {
-    for (let gx = 0; gx < cols; gx++) {
-      const idx = gy * cols + gx;
-      const dx  = PADDING + gx * (gw * ZOOM + PADDING);
-      const dy  = PADDING + gy * (gh * ZOOM + PADDING);
-      const g   = pngExtracted[idx];
+  // Fond noir
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Fond sélectionné ou non
-      const isSelected = pngSelected.includes(idx);
-      ctx.fillStyle = isSelected ? '#3a1a5a' : '#1a1a2a';
-      ctx.fillRect(dx - 1, dy - 1, gw * ZOOM + 2, gh * ZOOM + 2);
-
-      // Pixels du glyphe
-      if (g) {
-        ctx.fillStyle = '#ffffff';
-        for (let r = 0; r < gh; r++) {
-          for (let c = 0; c < gw; c++) {
-            const byteIdx = Math.floor((r * gw + c) / 8);
-            // Recalcul depuis les données brutes pour affichage
-            const srcX = ox + gx * (gw + sx);
-            const srcY = oy + gy * (gh + sy);
-            const px   = srcX + c;
-            const py   = srcY + r;
-            if (px >= 0 && px < pngBitmap.width && py >= 0 && py < pngBitmap.height) {
-              const di  = (py * pngBitmap.width + px) * 4;
-              const lum = (pngBitmap.data[di+3] === 0) ? 255 :
-                Math.round(0.299 * pngBitmap.data[di] + 0.587 * pngBitmap.data[di+1] + 0.114 * pngBitmap.data[di+2]);
-              const on  = invertPx ? (lum < threshold) : (lum >= threshold);
-              if (on) ctx.fillRect(dx + c * ZOOM, dy + r * ZOOM, ZOOM, ZOOM);
-            }
-          }
+  // Dessiner chaque glyphe
+  ctx.fillStyle = '#ffffff';
+  CHARS.forEach((c, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const ox  = col * glyph * scale;
+    const oy  = row * glyph * scale;
+    const g   = font[c] || new Array(glyph === 8 ? 8 : 32).fill(0);
+    for (let r = 0; r < glyph; r++) {
+      for (let bc = 0; bc < glyph; bc++) {
+        let on;
+        if (glyph === 8) {
+          on = !!(g[r] & (1 << (7 - bc)));
+        } else {
+          const byteIdx = r * 2 + (bc < 8 ? 0 : 1);
+          const bitPos  = 7 - (bc % 8);
+          on = !!(g[byteIdx] & (1 << bitPos));
         }
-      }
-
-      // Cadre sélection
-      if (isSelected) {
-        ctx.strokeStyle = '#c080ff';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(dx - 1.5, dy - 1.5, gw * ZOOM + 3, gh * ZOOM + 3);
+        if (on) ctx.fillRect(ox + bc * scale, oy + r * scale, scale, scale);
       }
     }
-  }
-
-  // Gestionnaire de clic sur la grille
-  canvas.onclick = e => {
-    const rect = canvas.getBoundingClientRect();
-    const mx   = (e.clientX - rect.left) * (cw / rect.width);
-    const my   = (e.clientY - rect.top)  * (ch / rect.height);
-    const gx   = Math.floor((mx - PADDING) / (gw * ZOOM + PADDING));
-    const gy   = Math.floor((my - PADDING) / (gh * ZOOM + PADDING));
-    if (gx < 0 || gx >= cols || gy < 0 || gy >= rows) return;
-    const idx = gy * cols + gx;
-    const pos = pngSelected.indexOf(idx);
-    if (pos >= 0) pngSelected.splice(pos, 1);
-    else pngSelected.push(idx);
-    drawPngSelectionGrid(cols, rows, gw, gh, ox, oy, sx, sy, threshold, invertPx);
-    updateExtractedPreview();
-  };
-}
-
-function updateExtractedPreview() {
-  const wrap = document.getElementById('png-extracted');
-  wrap.innerHTML = '';
-  if (pngSelected.length === 0) {
-    wrap.innerHTML = '<div style="color:var(--dim);font-size:10px;padding:4px">Aucun glyphe sélectionné</div>';
-    return;
-  }
-  pngSelected.forEach((idx, order) => {
-    const g = pngExtracted[idx];
-    if (!g) return;
-    const item = document.createElement('div');
-    item.className = 'extracted-glyph';
-    item.title = `Glyphe #${idx} (${g.label})`;
-
-    const cv = document.createElement('canvas');
-    cv.width  = g.gw * 3;
-    cv.height = g.gh * 3;
-    cv.style.width  = (g.gw * 3) + 'px';
-    cv.style.height = (g.gh * 3) + 'px';
-    const ctx = cv.getContext('2d');
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, cv.width, cv.height);
-    ctx.fillStyle = '#fff';
-    // Afficher depuis pngBitmap directement
-    const cols    = getPngParam('param-cols');
-    const ox      = getPngParam('param-ox');
-    const oy      = getPngParam('param-oy');
-    const sx      = getPngParam('param-sx');
-    const sy      = getPngParam('param-sy');
-    const gw      = g.gw, gh = g.gh;
-    const threshold = parseInt(document.getElementById('param-threshold').value);
-    const invertPx  = document.getElementById('param-invert').checked;
-    const gx_i = idx % cols, gy_i = Math.floor(idx / cols);
-    for (let r = 0; r < gh; r++) {
-      for (let c = 0; c < gw; c++) {
-        const px = ox + gx_i * (gw + sx) + c;
-        const py = oy + gy_i * (gh + sy) + r;
-        if (px < pngBitmap.width && py < pngBitmap.height) {
-          const di  = (py * pngBitmap.width + px) * 4;
-          const lum = pngBitmap.data[di+3] === 0 ? 255 :
-            Math.round(0.299 * pngBitmap.data[di] + 0.587 * pngBitmap.data[di+1] + 0.114 * pngBitmap.data[di+2]);
-          if (invertPx ? (lum < threshold) : (lum >= threshold))
-            ctx.fillRect(c * 3, r * 3, 3, 3);
-        }
-      }
-    }
-
-    const lbl = document.createElement('span');
-    // Afficher le caractère mappé si disponible
-    const mappedChar = pngCharMapping[order];
-    lbl.textContent = mappedChar ? charLabel(mappedChar) : `#${idx}`;
-    item.appendChild(cv);
-    item.appendChild(lbl);
-    wrap.appendChild(item);
-  });
-}
-
-// Sélecteur de caractères cibles dans la modale
-function buildPngCharSelect() {
-  const wrap = document.getElementById('png-char-select');
-  wrap.innerHTML = '';
-  pngCharMapping = [];
-  for (const c of CHARS) {
-    const btn = document.createElement('div');
-    btn.className = 'png-char-btn';
-    btn.textContent = charLabel(c);
-    if (c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7F) btn.style.fontSize = '8px';
-    btn.title = charTitle(c);
-    btn.dataset.charCode = c.charCodeAt(0);
-    btn.addEventListener('click', () => togglePngCharMapping(c, btn));
-    wrap.appendChild(btn);
-  }
-  updatePngCharsCount();
-}
-
-function togglePngCharMapping(c, btn) {
-  const pos = pngCharMapping.indexOf(c);
-  if (pos >= 0) {
-    pngCharMapping.splice(pos, 1);
-    btn.classList.remove('selected');
-  } else {
-    pngCharMapping.push(c);
-    btn.classList.add('selected');
-  }
-  updatePngCharsCount();
-  updateExtractedPreview();
-}
-
-function updatePngCharsCount() {
-  document.getElementById('png-chars-count').textContent = pngCharMapping.length;
-}
-
-function applySeqMapping() {
-  const seq = document.getElementById('png-seq-input').value;
-  // Réinitialiser la sélection
-  pngCharMapping = [];
-  document.querySelectorAll('.png-char-btn').forEach(b => b.classList.remove('selected'));
-  // Appliquer dans l'ordre
-  for (const c of seq) {
-    if (CHARS.includes(c) && !pngCharMapping.includes(c)) {
-      pngCharMapping.push(c);
-      document.querySelector(`.png-char-btn[data-char-code="${c.charCodeAt(0)}"]`)?.classList.add('selected');
-    }
-  }
-  updatePngCharsCount();
-  updateExtractedPreview();
-}
-
-function importFromPng() {
-  if (!pngImage || pngSelected.length === 0) {
-    setStatus('✗ Aucun glyphe sélectionné', 'var(--red)');
-    return;
-  }
-
-  const gw   = getPngParam('param-gw');
-  const gh   = getPngParam('param-gh');
-  const cols = getPngParam('param-cols');
-  const ox   = getPngParam('param-ox');
-  const oy   = getPngParam('param-oy');
-  const sx   = getPngParam('param-sx');
-  const sy   = getPngParam('param-sy');
-  const threshold = parseInt(document.getElementById('param-threshold').value);
-  const invertPx  = document.getElementById('param-invert').checked;
-
-  let imported = 0;
-
-  pngSelected.forEach((glyphIdx, order) => {
-    const targetChar = pngCharMapping[order];
-    if (!targetChar) return;
-
-    const gx_i = glyphIdx % cols;
-    const gy_i = Math.floor(glyphIdx / cols);
-
-    if (MODE === 8) {
-      // Redimensionner gw×gh → 8×8 si nécessaire, sinon prendre les 8 premiers bits
-      const bytes = new Array(8).fill(0);
-      for (let r = 0; r < Math.min(8, gh); r++) {
-        let b = 0;
-        for (let c = 0; c < Math.min(8, gw); c++) {
-          const px = ox + gx_i * (gw + sx) + c;
-          const py = oy + gy_i * (gh + sy) + r;
-          if (px < pngBitmap.width && py < pngBitmap.height) {
-            const di  = (py * pngBitmap.width + px) * 4;
-            const lum = pngBitmap.data[di+3] === 0 ? 255 :
-              Math.round(0.299 * pngBitmap.data[di] + 0.587 * pngBitmap.data[di+1] + 0.114 * pngBitmap.data[di+2]);
-            if (invertPx ? (lum < threshold) : (lum >= threshold))
-              b |= (1 << (7 - c));
-          }
-        }
-        bytes[r] = b;
-      }
-      font8[targetChar] = bytes;
-    } else {
-      // 16×16 : 2 octets par ligne
-      const bytes = new Array(32).fill(0);
-      for (let r = 0; r < Math.min(16, gh); r++) {
-        for (let c = 0; c < Math.min(16, gw); c++) {
-          const px = ox + gx_i * (gw + sx) + c;
-          const py = oy + gy_i * (gh + sy) + r;
-          if (px < pngBitmap.width && py < pngBitmap.height) {
-            const di  = (py * pngBitmap.width + px) * 4;
-            const lum = pngBitmap.data[di+3] === 0 ? 255 :
-              Math.round(0.299 * pngBitmap.data[di] + 0.587 * pngBitmap.data[di+1] + 0.114 * pngBitmap.data[di+2]);
-            if (invertPx ? (lum < threshold) : (lum >= threshold)) {
-              const byteIdx = r * 2 + (c < 8 ? 0 : 1);
-              const bitPos  = 7 - (c % 8);
-              bytes[byteIdx] |= (1 << bitPos);
-            }
-          }
-        }
-      }
-      font16[targetChar] = bytes;
-    }
-    imported++;
   });
 
-  // Mettre à jour la police active
-  font = MODE === 8 ? font8 : font16;
-  closePngModal();
-  updateAll();
-  setStatus(`✓ ${imported} glyphe(s) importé(s) depuis le PNG`);
-
-  // Réinitialiser la sélection
-  pngSelected = [];
+  // Télécharger
+  const a = document.createElement('a');
+  a.href     = canvas.toDataURL('image/png');
+  a.download = `mafont_${glyph}x${glyph}_x${scale}.png`;
+  a.click();
+  setStatus(`✓ PNG exporté : mafont_${glyph}x${glyph}_x${scale}.png (${canvas.width}×${canvas.height}px)`);
 }
+
 
 // ═══════════════════════════════════════════════════════════
 // RACCOURCIS CLAVIER
@@ -1272,8 +913,6 @@ function importFromPng() {
 
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-  // Fermer modale avec Escape
-  if (e.key === 'Escape') { closePngModal(); return; }
 
   const idx = CHARS.indexOf(current);
   if (e.key === 'ArrowRight' && idx < CHARS.length-1) { selectChar(CHARS[idx+1]); return; }
@@ -1299,5 +938,4 @@ document.addEventListener('keydown', e => {
 // ═══════════════════════════════════════════════════════════
 
 rebuildAll();
-buildPngCharSelect();
 updateAll();
