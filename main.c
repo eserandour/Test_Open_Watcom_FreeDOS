@@ -24,7 +24,7 @@
 #include "timer.h"    /* installTimer, restoreTimer        */
 #include "video.h"    /* initBackbuffer, setVideoMode, etc */
 #include "palette.h"  /* getPalette, generatePinkPalette   */
-#include "font.h"     /* initFont, initMyFont*             */
+#include "font.h"     /* initBiosFont, initMyFont*             */
 #include "scene.h"    /* setScene, runCurrentScene         */
 
 /* =========================================================
@@ -74,7 +74,7 @@ int main(void)
 
     /* Initialiser les polices. biosFont pointe vers la ROM,
        myFont* allouent leurs glyphes dans leurs FontBank. */
-    initFont();
+    initBiosFont();
     initMyFont8();
     initMyFont16();
 
