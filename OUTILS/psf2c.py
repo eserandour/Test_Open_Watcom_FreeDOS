@@ -108,7 +108,7 @@ def generate_c_array(chars, char_width, char_height, array_name="myFont"):
     raw_lines = []
     for i, char_data in enumerate(chars):
         hex_bytes = [f"0x{b:02x}" for b in char_data]
-        raw = f"    defineChar{char_width}({array_name}, {i:{num_width}}, {', '.join(hex_bytes)})"
+        raw = f"    defineChar{char_width}x{char_height}({array_name}, {i:{num_width}}, {', '.join(hex_bytes)})"
         raw_lines.append(raw)
 
     max_len = max(len(r) for r in raw_lines)
