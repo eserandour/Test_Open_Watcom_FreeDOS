@@ -24,4 +24,7 @@ projet/
 │
 └── OUTILS
     ├── fonteditor (.htm + .js pour créer ses propres polices de caractères)
-    └── img2vga.py (pour créer les fichiers *.pal et *.raw)
+    ├── img2vga.py (pour créer les fichiers *.pal et *.raw)
+    └── psf2c.py   (pour extraire le codage d'une police Linux PSF1/PSF2
+                    en .c (appels defineChar*) et .png (planche visuelle)
+                    Usage : python3 psf2c.py fichier.psf[.gz])
