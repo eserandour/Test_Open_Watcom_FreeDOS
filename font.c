@@ -3,7 +3,7 @@
    =========================================================
    API unifiée : drawChar, drawText, drawTextCentered
    acceptent un Font* qui encapsule indifféremment la police
-   BIOS ROM ou une FontBank custom.
+   BIOS ROM ou une FontBank personnelle.
 
    Les données brutes des glyphes sont dans fontdata.c.
    ========================================================= */
@@ -15,7 +15,7 @@
 #include "video.h"     /* SCREEN_WIDTH */
 #include "graphics.h"  /* putPixel */
 #include "font.h"
-#include "fontdata.h"  /* _initFont8D, _initFont16D */
+#include "fontdata.h"  /* _initFont8x8D, _initFont16x16D */
 
 /* =========================================================
    VARIABLES GLOBALES
@@ -27,15 +27,15 @@
 static unsigned char far *biosFont = NULL;
 
 /* FontBank sous-jacentes, allouées en far heap par initMyFont*(). */
-FontBank far *myFont8  = NULL;
-FontBank far *myFont16 = NULL;
+FontBank far *myFont8x8  = NULL;
+FontBank far *myFont16x16 = NULL;
 
 /* Structures Font globales prêtes à l'emploi.
    Initialisées par initBiosFont() et initMyFont*().
    FONT_BIOS.bank = NULL car la police vient de la ROM. */
 Font FONT_BIOS = { FONT_TYPE_BIOS, NULL, 8  };
-Font FONT_8    = { FONT_TYPE_BANK, NULL, 8  };
-Font FONT_16   = { FONT_TYPE_BANK, NULL, 16 };
+Font FONT_8X8    = { FONT_TYPE_BANK, NULL, 8  };
+Font FONT_16X16   = { FONT_TYPE_BANK, NULL, 16 };
 
 /* =========================================================
    INITIALISATION INTERNE
@@ -50,9 +50,9 @@ static void _initFontBank(FontBank far *fb, FontSize size)
 
     switch (size)
     {
-        case FONT_SIZE_8:  bpg = FONT8_GLYPH_BYTES;  break;
-        case FONT_SIZE_16: bpg = FONT16_GLYPH_BYTES; break;
-        default:           bpg = FONT8_GLYPH_BYTES;  break;
+        case FONT_SIZE_8X8:  bpg = FONT_8X8_GLYPH_BYTES;  break;
+        case FONT_SIZE_16X16: bpg = FONT_16X16_GLYPH_BYTES; break;
+        default:           bpg = FONT_8X8_GLYPH_BYTES;  break;
     }
 
     fb->size            = size;
@@ -71,7 +71,7 @@ static void _initFontBank(FontBank far *fb, FontSize size)
 /* Ajoute ou remplace un glyphe 8x8.
    Alloue un nouveau slot si le caractère n'existe pas encore
    dans la FontBank, sinon écrase l'existant. */
-void defineChar8(FontBank far *fb, unsigned char c,
+void defineChar8x8(FontBank far *fb, unsigned char c,
                  unsigned char b0, unsigned char b1,
                  unsigned char b2, unsigned char b3,
                  unsigned char b4, unsigned char b5,
@@ -94,7 +94,7 @@ void defineChar8(FontBank far *fb, unsigned char c,
 /* Ajoute ou remplace un glyphe 16x16.
    Stockage big-endian : octet haut en premier pour que
    le rendu lise les bits de gauche à droite. */
-void defineChar16(FontBank far *fb, unsigned char c,
+void defineChar16x16(FontBank far *fb, unsigned char c,
                   unsigned int rows[16])
 {
     int slot, i;
@@ -160,8 +160,8 @@ static void _renderGlyph16(int x, int y, unsigned char color,
    RENDU PUBLIC — API UNIFIÉE
    ========================================================= */
 
-/* Dessine un caractère CP437 avec la police f.
-   c est un code CP437 direct (0x00–0xFF).
+/* Dessine un caractère avec la police f.
+   c est un code direct (0x00–0xFF).
    Pour FONT_TYPE_BIOS, le code est passé tel quel à la ROM.
    Pour FONT_TYPE_BANK, le code indexe directement la LUT. */
 void drawChar(int x, int y, unsigned char c,
@@ -180,7 +180,7 @@ void drawChar(int x, int y, unsigned char c,
     }
     else
     {
-        /* Police custom : chercher le glyphe CP437 dans la FontBank. */
+        /* Police personnelle : chercher le glyphe dans la FontBank. */
         int slot = f->bank->lut[(unsigned int)c];
         if (slot < 0) return;   /* caractère non défini */
 
@@ -188,18 +188,18 @@ void drawChar(int x, int y, unsigned char c,
 
         switch (f->bank->size)
         {
-            case FONT_SIZE_8:
+            case FONT_SIZE_8X8:
                 _renderGlyph8(x, y, color, g);
                 break;
-            case FONT_SIZE_16:
+            case FONT_SIZE_16X16:
                 _renderGlyph16(x, y, color, g);
                 break;
         }
     }
 }
 
-/* Dessine une chaîne CP437 avec la police f.
-   Chaque octet de str est un code CP437 direct.
+/* Dessine une chaîne avec la police f.
+   Chaque octet de str est un code direct.
    L'espacement entre caractères = f->size pixels. */
 void drawText(int x, int y, const char *str,
               unsigned char color, Font *f)
@@ -214,7 +214,7 @@ void drawText(int x, int y, const char *str,
     }
 }
 
-/* Dessine une chaîne CP437 centrée horizontalement.
+/* Dessine une chaîne centrée horizontalement.
    Largeur totale = longueur en octets * f->size pixels. */
 void drawTextCentered(int y, const char *str,
                       unsigned char color, Font *f)
@@ -241,24 +241,24 @@ void initBiosFont(void)
        pas besoin de modifier ses champs ici. */
 }
 
-/* Alloue myFont8 en far heap, initialise la FontBank,
+/* Alloue myFont8x8 en far heap, initialise la FontBank,
    charge ses glyphes depuis fontdata.c,
-   et met à jour FONT_8 pour qu'elle pointe dessus. */
-void initMyFont8(void)
+   et met à jour FONT_8X8 pour qu'elle pointe dessus. */
+void initMyFont8x8(void)
 {
-    myFont8 = (FontBank far *)_fmalloc(sizeof(FontBank));
-    if (!myFont8) { setVideoMode(0x03); exit(1); }
-    _initFontBank(myFont8, FONT_SIZE_8);
-    _initFont8D();
-    FONT_8.bank = myFont8;
+    myFont8x8 = (FontBank far *)_fmalloc(sizeof(FontBank));
+    if (!myFont8x8) { setVideoMode(0x03); exit(1); }
+    _initFontBank(myFont8x8, FONT_SIZE_8X8);
+    _initFont8x8D();
+    FONT_8X8.bank = myFont8x8;
 }
 
-/* Alloue myFont16 en far heap et met à jour FONT_16. */
-void initMyFont16(void)
+/* Alloue myFont16x16 en far heap et met à jour FONT_16X16. */
+void initMyFont16x16(void)
 {
-    myFont16 = (FontBank far *)_fmalloc(sizeof(FontBank));
-    if (!myFont16) { setVideoMode(0x03); exit(1); }
-    _initFontBank(myFont16, FONT_SIZE_16);
-    _initFont16D();
-    FONT_16.bank = myFont16;
+    myFont16x16 = (FontBank far *)_fmalloc(sizeof(FontBank));
+    if (!myFont16x16) { setVideoMode(0x03); exit(1); }
+    _initFontBank(myFont16x16, FONT_SIZE_16X16);
+    _initFont16x16D();
+    FONT_16X16.bank = myFont16x16;
 }
