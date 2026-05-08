@@ -6,12 +6,12 @@
 
    Sous-phases :
    1. FONT_BIOS : 128 caractères ASCII/IBM (ROM BIOS)
-   2. FONT_8    : 256 caractères custom 8x8
-   3. FONT_16   : 256 caractères custom 16x16, sur 2 pages
+   2. FONT_8X8    : 256 caractères personnels 8x8
+   3. FONT_16X16   : 256 caractères personnels 16x16, sur 2 pages
 
    Navigation :
    - Phases 1 et 2 : n'importe quelle touche → phase suivante
-   - Phase 3 (FONT_16) :
+   - Phase 3 (FONT_16X16) :
        Tab / Shift+Tab → page suivante / précédente (sans fade)
        Toute autre touche → fade-out vers SCENE_4
 
@@ -19,9 +19,9 @@
    - Fade-out 0.5 s, puis fade-in 0.5 s.
 
    Grilles :
-     FONT_BIOS / FONT_8  : 16 col × 16 lignes, pas 10 px
-     FONT_16 page 1      : car. 0-127,  16 col × 8 lignes, pas 18 px
-     FONT_16 page 2      : car. 128-255, 16 col × 8 lignes, pas 18 px
+     FONT_BIOS / FONT_8X8  : 16 col × 16 lignes, pas 10 px
+     FONT_16X16 page 1      : car. 0-127,  16 col × 8 lignes, pas 18 px
+     FONT_16X16 page 2      : car. 128-255, 16 col × 8 lignes, pas 18 px
 
    Optimisation : le backbuffer est construit une seule fois
    par (sous-phase, page), puis seule la palette évolue
@@ -35,7 +35,7 @@
 #include "palette.h"  /* pinkPalette, fadePalette,
                          setPalette, generateBlackPalette  */
 #include "graphics.h" /* clearScreen, drawLine             */
-#include "font.h"     /* Font, FONT_BIOS, FONT_8/16,
+#include "font.h"     /* Font, FONT_BIOS, FONT_8X8/16,
                          drawChar, drawText                */
 #include "scene.h"    /* setScene, SCENE_4                 */
 
@@ -88,7 +88,7 @@ static void drawPhase1(void)
     }
 }
 
-/* Sous-phase 2 : FONT_8 (myFont8 8x8 custom)
+/* Sous-phase 2 : FONT_8X8 (myFont8x8)
    Grille 16×16, espacement 10 px.
    Les cases sans glyphe défini restent vides (trous voulus). */
 static void drawPhase2(void)
@@ -97,7 +97,7 @@ static void drawPhase2(void)
     int startX = (SCREEN_WIDTH  - 16 * 10) / 2;
     int startY = (SCREEN_HEIGHT - 16 * 10) / 2 + 9;
 
-    drawTextCentered(4, "myFont8 (8x8) - 0..255", 255, &FONT_BIOS);
+    drawTextCentered(4, "myFont8x8 - 0..255", 255, &FONT_BIOS);
     drawLine(4, 15, 315, 15, 100);
 
     for (c = 0; c < 256; c++)
@@ -106,11 +106,11 @@ static void drawPhase2(void)
         row = c / 16;
         drawChar(startX + col * 10,
                  startY + row * 10,
-                 (unsigned char)c, 255, &FONT_8);
+                 (unsigned char)c, 255, &FONT_8X8);
     }
 }
 
-/* Sous-phase 3 : FONT_16 (myFont16 16x16 custom), 2 pages.
+/* Sous-phase 3 : FONT_16X16 (myFont16x16), 2 pages.
    Chaque page affiche 128 caractères en grille 16×8.
    Espacement 18 px (16 px glyphe + 2 px marge).
    Hauteur grille : 8 × 18 = 144 px — tient dans 200 px.
@@ -125,9 +125,9 @@ static void drawPhase3(int page)
     int startY = (SCREEN_HEIGHT -  8 * 18) / 2 + 9;
 
     if (page == 0)
-        drawTextCentered(4, "myFont16 (16x16) - 0..127  [Tab>]", 255, &FONT_BIOS);
+        drawTextCentered(4, "myFont16x16 - 0..127  [Tab>]", 255, &FONT_BIOS);
     else
-        drawTextCentered(4, "myFont16 (16x16) - 128..255 [<Tab]", 255, &FONT_BIOS);
+        drawTextCentered(4, "myFont16x16 - 128..255 [<Tab]", 255, &FONT_BIOS);
     drawLine(4, 15, 315, 15, 100);
 
     for (c = 0; c < 128; c++)
@@ -136,7 +136,7 @@ static void drawPhase3(int page)
         row = c / 16;
         drawChar(startX + col * 18,
                  startY + row * 18,
-                 (unsigned char)(base + c), 255, &FONT_16);
+                 (unsigned char)(base + c), 255, &FONT_16X16);
     }
 }
 
@@ -223,7 +223,7 @@ void scene3(void)
             }
             else
             {
-                /* Phase 3 (FONT_16) : Tab bascule la page,
+                /* Phase 3 (FONT_16X16) : Tab bascule la page,
                    toute autre touche passe à SCENE_4. */
                 if (key == KEY_TAB)
                 {
