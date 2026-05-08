@@ -75,8 +75,8 @@ int main(void)
     /* Initialiser les polices. biosFont pointe vers la ROM,
        myFont* allouent leurs glyphes dans leurs FontBank. */
     initBiosFont();
-    initMyFont8();
-    initMyFont16();
+    initMyFont8x8();
+    initMyFont16x16();
 
     /* Lire la palette VGA actuelle (définie par le BIOS).
        Elle sera utilisée dans scene1 comme palette
