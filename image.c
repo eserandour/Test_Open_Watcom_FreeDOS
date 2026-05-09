@@ -1,50 +1,59 @@
 /* =========================================================
-   IMAGE.C — Chargement et affichage d'images en mode 13h
+   IMAGE.C — Chargement d'images RAW/PAL en mode 13h
    =========================================================
    Environnement : Open Watcom 1.9, FreeDOS 1.4
-   Mode video    : 13h (320x200, 256 couleurs)
+   Mode video    : 13h (320x200, 256 couleurs, 1 octet/pixel)
 
-   Dependances :
-   - video.h   : backbuffer (far *), BACKBUFFER_SIZE,
-                 SCREEN_WIDTH, OFFSET(x,y)
-   - palette.h : workingPalette, setPalette, Color
+   Organisation des fonctions :
+
+     readPalette        (interne) lecture brute du .pal
+     loadImagePal       palette seule -> DAC
+
+     loadImageRaw       .raw entier -> backbuffer, opaque
+     loadImageRawKey    .raw entier -> backbuffer, colorKey
+
+     loadScreenRaw      raccourci 320x200 en (0,0)
+
+     loadImageZoneRaw   zone d'un .raw -> backbuffer, opaque
+     loadImageZoneRawKey zone d'un .raw -> backbuffer, colorKey
+
+     drawImage          palette + .raw -> backbuffer
+     drawScreen         palette + .raw 320x200 -> backbuffer
    ========================================================= */
 
-#include <stdio.h>    /* FILE, fopen, fread, fclose         */
+#include <stdio.h>    /* FILE, fopen, fread, fseek, fclose  */
 #include <string.h>   /* _fmemcpy                           */
-#include "video.h"    /* backbuffer, BACKBUFFER_SIZE,
-                         SCREEN_WIDTH, OFFSET               */
+#include "video.h"    /* backbuffer, SCREEN_WIDTH,
+                         SCREEN_HEIGHT, OFFSET             */
 #include "palette.h"  /* workingPalette, setPalette, Color  */
 #include "image.h"
 
+
 /* =========================================================
-   FONCTION INTERNE : readPalette
+   readPalette — lecture interne du fichier .pal
    =========================================================
-   Lit 768 octets depuis f (256 entrees × 3 composantes RGB
-   sur 6 bits) et remplit workingPalette, puis envoie la
-   palette au DAC VGA.
+   Lit 768 octets depuis f et remplit workingPalette, puis
+   envoie immediatement la palette au DAC VGA.
+
+   Format .pal : 256 entrees x 3 octets (R, G, B).
+   Chaque composante est sur 6 bits (0-63), format natif
+   du DAC VGA (pas de conversion necessaire).
 
    Pourquoi un buffer intermediaire ?
-   fread() lit des octets bruts. La structure Color contient
-   trois unsigned char (r, g, b) mais le compilateur peut
-   inserer du padding entre les champs selon l'alignement.
-   On lit donc dans un tableau d'octets contigu, puis on
-   affecte champ par champ pour etre independant du padding.
+   La structure Color peut contenir du padding selon
+   l'alignement choisi par le compilateur. On lit dans un
+   tableau d'octets contigu garantissant l'absence de trous,
+   puis on affecte champ par champ dans la structure.
 
    Retourne 1 si succes, 0 si lecture incomplete. */
 static int readPalette(FILE *f)
 {
-    unsigned char buf[768];   /* 256 * 3 octets, contigu    */
+    unsigned char buf[768];
     int i;
 
     if (fread(buf, 1, 768, f) != 768)
         return 0;
 
-    /* Recopier octet par octet dans la structure Color.
-       buf[i*3]   = composante rouge  de la couleur i
-       buf[i*3+1] = composante verte  de la couleur i
-       buf[i*3+2] = composante bleue  de la couleur i
-       Toutes sur 6 bits (0-63), format natif du DAC VGA. */
     for (i = 0; i < 256; i++)
     {
         workingPalette[i].r = buf[i * 3];
@@ -52,175 +61,315 @@ static int readPalette(FILE *f)
         workingPalette[i].b = buf[i * 3 + 2];
     }
 
-    /* Envoyer la palette remplie au DAC VGA.
-       A partir de cet instant les couleurs changent a l'ecran,
-       meme si le backbuffer n'a pas encore ete mis a jour. */
     setPalette(workingPalette);
     return 1;
 }
 
-/* =========================================================
-   FONCTION INTERNE : readPixelsTo
-   =========================================================
-   Lit BACKBUFFER_SIZE octets (64000) depuis f vers le
-   buffer far pointe par dst.
-
-   Le parametre dst peut etre :
-   - backbuffer  : chargement direct pour affichage immediat
-   - un buffer far alloue par l'appelant : stockage en heap
-
-   Retourne 1 si succes, 0 si lecture incomplete. */
-static int readPixelsTo(FILE *f, unsigned char far *dst)
-{
-    /* fread() avec un pointeur far fonctionne correctement
-       en modele memoire large (-ml) sous Open Watcom :
-       le compilateur genere les instructions far adequates
-       pour ecrire au-dela du segment de donnees courant. */
-    if (fread(dst, 1, BACKBUFFER_SIZE, f) != BACKBUFFER_SIZE)
-        return 0;
-
-    return 1;
-}
 
 /* =========================================================
-   loadImage — palette + raw (deux fichiers)
+   loadImagePal — charge la palette seule
    =========================================================
-   Sequence :
-   1. Ouvrir .pal, lire la palette, mettre a jour le DAC.
-   2. Ouvrir .raw, lire les 64000 pixels dans le backbuffer.
-   L'image est visible apres un appel a flip(). */
-int loadImage(const char *palFile, const char *rawFile)
-{
-    FILE *f;
+   Ouvre le .pal, appelle readPalette() qui remplit
+   workingPalette et envoie la palette au DAC VGA.
+   Ne touche pas au backbuffer.
 
-    f = fopen(palFile, "rb");
-    if (!f) return IMG_ERR_PAL;
-    if (!readPalette(f)) { fclose(f); return IMG_ERR_READ; }
-    fclose(f);
-
-    f = fopen(rawFile, "rb");
-    if (!f) return IMG_ERR_RAW;
-    if (!readPixelsTo(f, backbuffer)) { fclose(f); return IMG_ERR_READ; }
-    fclose(f);
-
-    return IMG_OK;
-}
-
-/* =========================================================
-   loadImageRaw — pixels seuls dans le backbuffer
-   =========================================================
-   Charge les pixels sans toucher a la palette.
-   Cas d'usage : plusieurs images partagent la meme palette
-   (chargee une seule fois avec loadImagePal), on ne charge
-   que les pixels pour chaque image suivante. */
-int loadImageRaw(const char *rawFile)
-{
-    FILE *f;
-
-    f = fopen(rawFile, "rb");
-    if (!f) return IMG_ERR_RAW;
-    if (!readPixelsTo(f, backbuffer)) { fclose(f); return IMG_ERR_READ; }
-    fclose(f);
-
-    return IMG_OK;
-}
-
-/* =========================================================
-   loadImagePal — palette seule
-   =========================================================
-   Charge et applique une palette sans toucher au backbuffer.
-   Cas d'usage : palette swap (changer l'ambiance d'une scene
-   sans recharger les pixels), ou pre-charger la palette
-   avant de remplir le backbuffer autrement. */
+   Retourne IMG_OK ou IMG_ERR_PAL / IMG_ERR_READ. */
 int loadImagePal(const char *palFile)
 {
     FILE *f;
 
     f = fopen(palFile, "rb");
     if (!f) return IMG_ERR_PAL;
-    if (!readPalette(f)) { fclose(f); return IMG_ERR_READ; }
-    fclose(f);
 
+    if (!readPalette(f)) { fclose(f); return IMG_ERR_READ; }
+
+    fclose(f);
     return IMG_OK;
 }
 
+
 /* =========================================================
-   loadImageToBuffer — pixels dans un buffer far arbitraire
+   loadImageRaw — .raw entier -> backbuffer, opaque
    =========================================================
-   Charge les pixels dans buf au lieu du backbuffer.
-   buf doit etre alloue par l'appelant avec _fmalloc :
+   Lit le .raw ligne par ligne (srcW octets par ligne) et
+   copie chaque ligne dans le backbuffer a (dstX, dstY+row)
+   via _fmemcpy.
 
-     unsigned char far *img = _fmalloc(BACKBUFFER_SIZE);
-     if (!img) { ... erreur memoire ... }
-     loadImageToBuffer("scene.raw", img);
+   Stride backbuffer : toujours SCREEN_WIDTH (320), pas srcW.
+   Seules les srcW colonnes et srcH lignes cibles sont
+   ecrites ; le reste du backbuffer est laisse intact.
 
-   Interet principal : pre-charger plusieurs images en far
-   heap au debut de la scene. Les afficher ensuite avec
-   drawImageRegion() est un simple transfert RAM->RAM,
-   beaucoup plus rapide qu'une lecture disque. */
-int loadImageToBuffer(const char *rawFile, unsigned char far *buf)
+   buf[320] sur la pile : suffisant car srcW <= 320.
+
+   Contraintes : dstX + srcW <= 320, dstY + srcH <= 200.
+   Retourne IMG_OK ou IMG_ERR_RAW / IMG_ERR_READ. */
+int loadImageRaw(const char *rawFile,
+                 int srcW, int srcH,
+                 int dstX, int dstY)
 {
     FILE *f;
+    unsigned char far *dst;
+    unsigned char buf[320];
+    int row;
 
     f = fopen(rawFile, "rb");
     if (!f) return IMG_ERR_RAW;
-    if (!readPixelsTo(f, buf)) { fclose(f); return IMG_ERR_READ; }
-    fclose(f);
 
+    dst = backbuffer + OFFSET(dstX, dstY);
+
+    for (row = 0; row < srcH; row++)
+    {
+        if (fread(buf, 1, (size_t)srcW, f) != (size_t)srcW)
+            { fclose(f); return IMG_ERR_READ; }
+
+        _fmemcpy(dst, buf, (size_t)srcW);
+
+        dst += SCREEN_WIDTH;   /* ligne suivante dans le backbuffer */
+    }
+
+    fclose(f);
     return IMG_OK;
 }
 
+
 /* =========================================================
-   drawImageRegion — copie une region d'un buffer vers le
-                     backbuffer
+   loadImageRawKey — .raw entier -> backbuffer avec colorKey
    =========================================================
-   Copie un rectangle de (w x h) pixels depuis src vers le
-   backbuffer a la position (dstX, dstY).
+   Identique a loadImageRaw mais ecrit les pixels un par un,
+   ce qui permet de sauter ceux dont l'index vaut colorKey.
 
-   Fonctionnement ligne par ligne :
-   En mode 13h, les pixels sont lineaires en memoire :
-   le pixel (x, y) se trouve a l'offset y*320 + x.
-   On ne peut donc pas copier toute la region en un seul
-   _fmemcpy — les lignes de src et de dst ne sont pas
-   contiguës dans la memoire globale (elles sont separees
-   par 320 octets chacune).
-   On copie donc une ligne a la fois avec _fmemcpy, en
-   avancant de 320 octets dans chaque buffer a chaque tour.
+   colorKey <  0 : bascule en _fmemcpy (opaque), equivalent
+                   exact a loadImageRaw.
+   colorKey >= 0 : pixels d'index colorKey non ecrits
+                   (le backbuffer sous-jacent est conserve).
 
-   Exemple : copier la moitie gauche d'une image en haut
-   a droite de l'ecran :
-     drawImageRegion(160, 0, 160, 100, monImage);
-
-   Pas de clipping : s'assurer que dstX+w <= 320
-                                  et dstY+h <= 200. */
-void drawImageRegion(int dstX, int dstY, int w, int h,
-                     unsigned char far *src)
+   Retourne IMG_OK ou IMG_ERR_RAW / IMG_ERR_READ. */
+int loadImageRawKey(const char *rawFile,
+                    int srcW, int srcH,
+                    int dstX, int dstY,
+                    int colorKey)
 {
+    FILE *f;
+    unsigned char far *dst;
+    unsigned char buf[320];
+    unsigned char ck;
+    int row, col;
+
+    f = fopen(rawFile, "rb");
+    if (!f) return IMG_ERR_RAW;
+
+    dst = backbuffer + OFFSET(dstX, dstY);
+    ck  = (unsigned char)colorKey;   /* cast une seule fois */
+
+    for (row = 0; row < srcH; row++)
+    {
+        if (fread(buf, 1, (size_t)srcW, f) != (size_t)srcW)
+            { fclose(f); return IMG_ERR_READ; }
+
+        if (colorKey < 0)
+        {
+            _fmemcpy(dst, buf, (size_t)srcW);   /* opaque */
+        }
+        else
+        {
+            for (col = 0; col < srcW; col++)
+                if (buf[col] != ck)
+                    dst[col] = buf[col];         /* transparent */
+        }
+
+        dst += SCREEN_WIDTH;
+    }
+
+    fclose(f);
+    return IMG_OK;
+}
+
+
+/* =========================================================
+   loadScreenRaw — raccourci .raw 320x200 en (0,0)
+   =========================================================
+   Cas le plus courant : image plein ecran chargee depuis
+   le coin superieur gauche.
+   Equivalent a : loadImageRaw(rawFile, 320, 200, 0, 0).
+   Retourne IMG_OK ou IMG_ERR_RAW / IMG_ERR_READ. */
+int loadScreenRaw(const char *rawFile)
+{
+    return loadImageRaw(rawFile, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
+}
+
+
+/* =========================================================
+   loadImageZoneRaw — zone d'un .raw -> backbuffer, opaque
+   =========================================================
+   Extrait le rectangle (srcX, srcY, zoneW, zoneH) depuis
+   un .raw de largeur imgW et le copie dans le backbuffer
+   en (dstX, dstY).
+
+   Principe de lecture :
+     1. fseek au premier pixel de la zone :
+          offset = srcY * imgW + srcX
+     2. Pour chaque ligne de la zone :
+          a. lire zoneW octets dans buf
+          b. _fmemcpy vers le backbuffer
+          c. fseek de (imgW - zoneW) pour sauter les
+             colonnes hors-zone et atterrir au debut
+             de la ligne suivante dans le .raw
+          d. avancer de SCREEN_WIDTH dans le backbuffer
+
+   Contraintes :
+     srcX + zoneW <= imgW
+     dstX + zoneW <= 320
+     dstY + zoneH <= 200
+
+   Retourne IMG_OK ou IMG_ERR_RAW / IMG_ERR_READ. */
+int loadImageZoneRaw(const char *rawFile,
+                     int imgW,
+                     int srcX, int srcY,
+                     int zoneW, int zoneH,
+                     int dstX, int dstY)
+{
+    FILE *f;
+    unsigned char far *dst;
+    unsigned char buf[320];
+    long offset;
     int row;
 
-    /* Pointeur far vers le premier pixel destination
-       dans le backbuffer : ligne dstY, colonne dstX.
-       OFFSET(x, y) = y*320 + x (defini dans video.h). */
-    unsigned char far *dst = backbuffer + OFFSET(dstX, dstY);
+    f = fopen(rawFile, "rb");
+    if (!f) return IMG_ERR_RAW;
 
-    /* Pointeur far vers le premier pixel source dans src.
-       On commence toujours en (0, 0) dans le buffer source :
-       drawImageRegion copie le coin superieur gauche de src.
-       Si vous voulez copier une autre region de src, decalez
-       src avant l'appel : src + OFFSET(srcX, srcY). */
-    unsigned char far *s = src;
+    offset = (long)srcY * imgW + srcX;
+    if (fseek(f, offset, SEEK_SET) != 0)
+        { fclose(f); return IMG_ERR_READ; }
 
-    for (row = 0; row < h; row++)
+    dst = backbuffer + OFFSET(dstX, dstY);
+
+    for (row = 0; row < zoneH; row++)
     {
-        /* Copier une ligne de w pixels.
-           _fmemcpy est la variante far de memcpy : elle
-           accepte des pointeurs far (segment:offset 32 bits)
-           et gere correctement les copies inter-segments. */
-        _fmemcpy(dst, s, (size_t)w);
+        if (fread(buf, 1, (size_t)zoneW, f) != (size_t)zoneW)
+            { fclose(f); return IMG_ERR_READ; }
 
-        /* Avancer d'une ligne dans chaque buffer.
-           Une ligne = SCREEN_WIDTH = 320 octets en mode 13h. */
+        _fmemcpy(dst, buf, (size_t)zoneW);
+
         dst += SCREEN_WIDTH;
-        s   += SCREEN_WIDTH;
+
+        /* Sauter les colonnes hors-zone pour la ligne suivante.
+           Le fseek final (apres la derniere ligne) est omis :
+           le fichier est ferme immediatement apres. */
+        if (row < zoneH - 1)
+        {
+            if (fseek(f, (long)(imgW - zoneW), SEEK_CUR) != 0)
+                { fclose(f); return IMG_ERR_READ; }
+        }
     }
+
+    fclose(f);
+    return IMG_OK;
+}
+
+
+/* =========================================================
+   loadImageZoneRawKey — zone d'un .raw -> backbuffer, colorKey
+   =========================================================
+   Identique a loadImageZoneRaw mais avec gestion de la
+   transparence : les pixels sont ecrits un par un, ce qui
+   permet de sauter ceux dont l'index vaut colorKey.
+
+   colorKey <  0 : bascule en _fmemcpy (opaque), equivalent
+                   exact a loadImageZoneRaw.
+   colorKey >= 0 : pixels d'index colorKey non ecrits.
+
+   Cas d'usage typique : extraire un glyphe d'une feuille
+   de sprites et l'afficher sur un fond existant sans
+   ecraser les pixels de fond du glyphe.
+
+   Retourne IMG_OK ou IMG_ERR_RAW / IMG_ERR_READ. */
+int loadImageZoneRawKey(const char *rawFile,
+                        int imgW,
+                        int srcX, int srcY,
+                        int zoneW, int zoneH,
+                        int dstX, int dstY,
+                        int colorKey)
+{
+    FILE *f;
+    unsigned char far *dst;
+    unsigned char buf[320];
+    unsigned char ck;
+    long offset;
+    int row, col;
+
+    f = fopen(rawFile, "rb");
+    if (!f) return IMG_ERR_RAW;
+
+    offset = (long)srcY * imgW + srcX;
+    if (fseek(f, offset, SEEK_SET) != 0)
+        { fclose(f); return IMG_ERR_READ; }
+
+    dst = backbuffer + OFFSET(dstX, dstY);
+    ck  = (unsigned char)colorKey;
+
+    for (row = 0; row < zoneH; row++)
+    {
+        if (fread(buf, 1, (size_t)zoneW, f) != (size_t)zoneW)
+            { fclose(f); return IMG_ERR_READ; }
+
+        if (colorKey < 0)
+        {
+            _fmemcpy(dst, buf, (size_t)zoneW);   /* opaque */
+        }
+        else
+        {
+            for (col = 0; col < zoneW; col++)
+                if (buf[col] != ck)
+                    dst[col] = buf[col];          /* transparent */
+        }
+
+        dst += SCREEN_WIDTH;
+
+        if (row < zoneH - 1)
+        {
+            if (fseek(f, (long)(imgW - zoneW), SEEK_CUR) != 0)
+                { fclose(f); return IMG_ERR_READ; }
+        }
+    }
+
+    fclose(f);
+    return IMG_OK;
+}
+
+
+/* =========================================================
+   drawImage — palette + .raw -> backbuffer en (dstX, dstY)
+   =========================================================
+   Combine loadImagePal et loadImageRaw en un seul appel.
+   Utile quand une image a sa propre palette et qu'on veut
+   l'afficher a une position precise.
+   Retourne IMG_OK ou un code IMG_ERR_*. */
+int drawImage(const char *palFile, const char *rawFile,
+              int srcW, int srcH,
+              int dstX, int dstY)
+{
+    int r;
+
+    r = loadImagePal(palFile);
+    if (r != IMG_OK) return r;
+
+    return loadImageRaw(rawFile, srcW, srcH, dstX, dstY);
+}
+
+
+/* =========================================================
+   drawScreen — palette + .raw 320x200 -> backbuffer en (0,0)
+   =========================================================
+   Combine loadImagePal et loadScreenRaw en un seul appel.
+   Raccourci pour afficher une image plein ecran avec sa
+   palette en une ligne de code.
+   Retourne IMG_OK ou un code IMG_ERR_*. */
+int drawScreen(const char *palFile, const char *rawFile)
+{
+    int r;
+
+    r = loadImagePal(palFile);
+    if (r != IMG_OK) return r;
+
+    return loadScreenRaw(rawFile);
 }
