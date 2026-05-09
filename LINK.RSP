@@ -7,6 +7,7 @@ file graphics.obj
 file font.obj
 file fontdata.obj
 file image.obj
+file font2.obj
 file scene.obj
 file scene1.obj
 file scene2.obj
